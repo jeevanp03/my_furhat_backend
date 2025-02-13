@@ -6,9 +6,19 @@ authors = [
     { name = "Jeevan Parmar", email = "j29parma@uwaterloo.ca" }
 ]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<4.0"
 dependencies = [
-    "requests>=2.32.3,<3.0.0"
+    "requests>=2.32.3,<3.0.0",
+    "python-dotenv (>=1.0.1,<2.0.0)",
+    "pydantic (>=2.10.6,<3.0.0)",
+    "transformers @ git+https://github.com/huggingface/transformers.git",
+    "langchain-huggingface (>=0.1.2,<0.2.0)",
+    "pydantic-settings (>=2.7.1,<3.0.0)",
+    "huggingface-hub (>=0.28.1,<0.29.0)",
+    "accelerate @ git+https://github.com/huggingface/accelerate.git",
+    "torch (>=2.6.0,<3.0.0)",
+    "gguf (>=0.10.0)",
+    "protobuf (>=5.29.3,<6.0.0)"
 ]
 
 [project.scripts]
