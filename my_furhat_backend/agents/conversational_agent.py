@@ -17,12 +17,12 @@ from my_furhat_backend.RAG.rag_flow import RAG
 rag_instance = RAG(
     hf=True,
     persist_directory="my_furhat_backend/db",
-    path_to_document="my_furhat_backend/CMRPublished.pdf"
+    path_to_document="my_furhat_backend/ingestion/CMRPublished.pdf"
 )
 
 # --- Define Chatbot Global Variable ---
 # chatbot = create_chatbot("huggingface")
-chatbot = create_chatbot("llama")
+chatbot = create_chatbot("llama", model_id = "my_furhat_backend/ggufs_models/SmolLM2-1.7B-Instruct-Q4_K_M.gguf")
 
 # --- Define State ---
 class State(TypedDict):

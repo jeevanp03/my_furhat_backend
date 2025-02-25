@@ -157,7 +157,7 @@ class RAG:
         Returns:
             List[Document]: A list of reranked document chunks.
         """
-        model = HuggingFaceCrossEncoder(model_name="mixedbread-ai/mxbai-rerank-base-v1")
+        model = HuggingFaceCrossEncoder(model_name="BAAI/bge-reranker-base")
         compressor = CrossEncoderReranker(model=model, top_n=top_n)
         compression_retriever = ContextualCompressionRetriever(
             base_compressor=compressor,
