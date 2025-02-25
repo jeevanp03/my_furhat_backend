@@ -33,9 +33,3 @@ class FoursquareClient:
         response = requests.get(endpoint, headers=self.headers, params=params)
         response.raise_for_status()
         return response.json()
-
-if __name__ == "__main__":
-    fs_client = FoursquareClient()
-    results = fs_client.search_places("40.7128,-74.0060", "cafe")
-    for place in results.get("results", []):
-        print(f"- {place.get('name')}")

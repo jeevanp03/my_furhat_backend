@@ -32,8 +32,3 @@ class OverpassClient:
         response.raise_for_status()
         return response.json()
 
-# Example usage:
-if __name__ == "__main__":
-    op_client = OverpassClient()
-    results = op_client.search_pois(40.7128, -74.0060, "restaurant")
-    print("Overpass results:", results)

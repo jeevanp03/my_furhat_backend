@@ -7,3 +7,7 @@ __pycache__/
 poetry.lock
 .env
 my_furhat_backend/__pycache__
+.envrc
+my_furhat_backend/ggufs_models
+my_furhat_backend/ingestion
+my_furhat_backend/db

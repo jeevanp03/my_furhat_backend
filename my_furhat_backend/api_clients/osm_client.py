@@ -32,10 +32,3 @@ class OSMClient:
         response = requests.get(url, params=params, headers=headers)
         response.raise_for_status()
         return response.json()
-
-# Example usage:
-if __name__ == "__main__":
-    osm = OSMClient()
-    results = osm.search_pois(40.7128, -74.0060, "restaurant")
-    for poi in results:
-        print(f"- {poi.get('display_name')}")

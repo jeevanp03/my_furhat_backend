@@ -1,13 +1,16 @@
-from langgraph import Node
 from my_furhat_backend.api_clients.overpass_client import OverpassClient
 
-class OverpassNode(Node):
+class OverpassNode:
     def __init__(self):
         self.overpass_client = OverpassClient()
-
-    def run(self, input_data: dict) -> dict:
-        lat = input_data.get("latitude")
-        lon = input_data.get("longitude")
-        query = input_data.get("query", "restaurant")
-        results = self.overpass_client.search_pois(lat, lon, query)
-        return {"overpass_results": results}
+    
+    def __call__(self, state: dict) -> dict:
+        lat = state.get("latitude")
+        lon = state.get("longitude")
+        query = state.get("query", "restaurant")
+        if lat is None or lon is None:
+            state["overpass_results"] = {}
+        else:
+            results = self.overpass_client.search_pois(lat, lon, query)
+            state["overpass_results"] = results
+        return state

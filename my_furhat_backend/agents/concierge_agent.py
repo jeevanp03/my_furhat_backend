@@ -1,101 +1,106 @@
-from langgraph.graph import StateGraph
-from langgraph.graph.message import add_messages
-from langchain.schema import SystemMessage, HumanMessage, AIMessage
-from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+from langchain.schema import SystemMessage, HumanMessage, AIMessage, BaseMessage
+from typing_extensions import TypedDict, Annotated, List
+from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.checkpoint.memory import MemorySaver
 
-# Import your node classes:
-from my_furhat_backend.nodes.ipdata_node import IPDataNode
-from my_furhat_backend.nodes.foursquare_node import FoursquareNode
-from my_furhat_backend.nodes.osm_node import OSMNode
-from my_furhat_backend.nodes.overpass_node import OverpassNode
-# from agent.nodes.tavily_search_node import TavilySearchNode  # Your web search tool node
-from my_furhat_backend.nodes.chatbot_node import ChatbotNode
+from my_furhat_backend.models.chatbot_factory import Chatbot_HuggingFace, Chatbot_LlamaCpp
+from my_furhat_backend.models.llm_factory import llm_hc_instance, llm_llama_instance
+from my_furhat_backend.utils.util import get_location_data, clean_output
 
-# Define the state type. The state is a dictionary that holds a list of messages.
+from my_furhat_backend.llm_tools.tools import tools as all_tools
+
+# Define our custom state.
 class State(TypedDict):
-    messages: "Annotated[List[AIMessage | HumanMessage | SystemMessage], add_messages]"
+    messages: Annotated[List[BaseMessage], "add_messages"]
 
-def aggregate_poi_context(fs_data: dict, osm_data: dict, op_data: dict, tavily_data: dict) -> str:
-    """Aggregate outputs from multiple POI nodes into a single context string."""
+def aggregate_poi_context(state: dict) -> str:
     parts = []
-    
-    if fs_data.get("foursquare_results"):
-        fs_names = ", ".join(item.get("name", "Unnamed") for item in fs_data["foursquare_results"][:3])
+    fs_results = state.get("foursquare_results", [])
+    if fs_results:
+        fs_names = ", ".join(item.get("name", "Unnamed") for item in fs_results[:3])
         parts.append(f"Foursquare: {fs_names}")
-    
-    if osm_data.get("osm_results"):
-        osm_names = ", ".join(poi.get("display_name", "Unnamed") for poi in osm_data["osm_results"][:3])
-        parts.append(f"OSM: {osm_names}")
-    
-    if op_data.get("overpass_results"):
-        elements = op_data.get("overpass_results", {}).get("elements", [])
-        op_names = ", ".join(
-            el.get("tags", {}).get("name") or el.get("tags", {}).get("amenity", "Unnamed")
-            for el in elements[:3]
-        )
-        parts.append(f"Overpass: {op_names}")
-    
-    # if tavily_data.get("tavily_results"):
-    #     tavily_names = ", ".join(result.get("title", "Unnamed") for result in tavily_data["tavily_results"][:3])
-    #     parts.append(f"Tavily Search: {tavily_names}")
-    
+    # You can add OSM/Overpass if needed.
     return "\n".join(parts)
 
-class ConciergeAgent:
-    def __init__(self):
-        # Create a state graph with an initial state structure.
-        self.graph = StateGraph(State)
-        # Add our nodes to the graph.
-        self.graph.add_node("ipdata", IPDataNode())
-        self.graph.add_node("foursquare", FoursquareNode())
-        self.graph.add_node("osm", OSMNode())
-        self.graph.add_node("overpass", OverpassNode())
-        # self.graph.add_node("tavily", TavilySearchNode())
-        self.graph.add_node("chatbot", ChatbotNode())
-        # In this simple design, we'll set the chatbot node as the final step.
-        self.graph.set_entry_point("chatbot")
+def chatbot_node_hc(state: State) -> State:
+    from my_furhat_backend.models.chatbot_factory import Chatbot_HuggingFace
+    chatbot = Chatbot_HuggingFace(model_instance=llm_hc_instance)
+    return chatbot.chatbot(state)
+
+# Build the LangGraph state graph.
+graph_builder = StateGraph(State)
+graph_builder.add_node("chatbot", chatbot_node_hc)
+
+# Create a ToolNode for the remaining tools.
+tool_node = ToolNode(tools=all_tools)
+graph_builder.add_node("tools", tool_node)
+
+# Add conditional edges so that if the chatbot issues a tool call, control flows to the tool node.
+graph_builder.add_conditional_edges("chatbot", tools_condition)
+graph_builder.add_edge("tools", "chatbot")
+
+graph_builder.set_entry_point("chatbot")
+memory = MemorySaver()
+graph = graph_builder.compile(checkpointer=memory)
+
+def run_conversation_streaming():
+    config = {"configurable": {"thread_id": "1"}}
+    print("Welcome to Mistrial, your AI concierge assistant.")
+    query = input("Enter your query (or 'exit' to quit): ")
+    if query.strip().lower() == "exit":
+        return
     
-    def handle_query(self, query: str, ip: str = None) -> str:
-        # Initialize the conversation state.
-        state: State = {
-            "messages": [
-                SystemMessage(content="You are a helpful AI concierge assistant."), 
-                HumanMessage(content=query)
-            ]
-        }
-        
-        # Step 1: Get user location using IPData node.
-        location_data = self.graph.run_node("ipdata", {"ip": ip})
-        lat = location_data.get("latitude")
-        lon = location_data.get("longitude")
-        if not lat or not lon:
-            return "Could not determine your location."
-        
-        # Prepare input data for POI nodes.
-        poi_input = {"latitude": lat, "longitude": lon, "query": query}
-        fs_data = self.graph.run_node("foursquare", poi_input)
-        osm_data = self.graph.run_node("osm", poi_input)
-        op_data = self.graph.run_node("overpass", poi_input)
-        tavily_data = self.graph.run_node("tavily", {"query": query})
-        
-        # Aggregate POI context.
-        poi_context = aggregate_poi_context(fs_data, osm_data, op_data, tavily_data)
-        
-        # Add a message with the aggregated context to the state.
+    # Get location data.
+    location = get_location_data()
+    latitude = location.get("latitude", 0.0)
+    longitude = location.get("longitude", 0.0)
+    print(f"Location data: latitude {latitude}, longitude {longitude}")
+    
+    # Updated system prompt instructing the use of the tool.
+    system_prompt = SystemMessage(content=(
+        f"You are Mistrial, a sophisticated, friendly, and highly knowledgeable concierge AI assistant. "
+        "Your mission is to deliver tailored, local recommendations and valuable information to guests and visitors. "
+        "You have been provided with the current location as follows: "
+        f"latitude {latitude} and longitude {longitude}. Always use this location data to inform your responses. "
+        "If you need to fetch additional local information or perform a lookup, output a tool call using the exact format: "
+        'TOOL: {"name": "restaurants_search", "args": {"query": "<your query>", "latitude": <latitude>, "longitude": <longitude>}}. '
+        "Ensure your responses are clear, professional, and engaging."
+    ))
+    
+    state: State = {
+        "messages": [
+            system_prompt,
+            HumanMessage(content=query)
+        ]
+    }
+    
+    print("Initial state set. Streaming response from Mistrial...")
+    events = graph.stream(state, config, stream_mode="values")
+    final_response = ""
+    for event in events:
+        final_response = clean_output(event["messages"][-1].content)
+    print("Mistrial:", final_response)
+    
+    # Add additional context from POI results if available.
+    poi_context = aggregate_poi_context(state)
+    if poi_context:
         state["messages"].append(HumanMessage(content=f"Context: {poi_context}"))
-        
-        # Now, run the chatbot node with the complete state.
-        final_state = self.graph.run_node("chatbot", state)
-        
-        # Extract the final response (assumed to be the last message in state).
-        if final_state.get("messages"):
-            return final_state["messages"][-1].content
-        else:
-            return "Sorry, no response generated."
+        events = graph.stream(state, config, stream_mode="values")
+        for event in events:
+            final_response = clean_output(event["messages"][-1].content)
+        print("Mistrial:", final_response)
+    
+    while True:
+        user_input = input("You: ")
+        if user_input.strip().lower() in ["exit", "quit"]:
+            print("Goodbye!")
+            break
+        state["messages"].append(HumanMessage(content=user_input))
+        events = graph.stream(state, config, stream_mode="values")
+        for event in events:
+            final_response = clean_output(event["messages"][-1].content)
+        print("Mistrial:", final_response)
 
 if __name__ == "__main__":
-    agent = ConciergeAgent()
-    user_query = "Find me a good restaurant nearby"
-    response = agent.handle_query(user_query, ip="")  # Optionally, pass a test IP.
-    print("Agent Response:")
-    print(response)
+    run_conversation_streaming()

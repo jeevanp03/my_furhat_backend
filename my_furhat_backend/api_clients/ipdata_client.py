@@ -26,10 +26,4 @@ class IPDataClient:
         """
         return ipdata.lookup()
 
-if __name__ == "__main__":
-    client = IPDataClient()
-    print(client.lookup().country_name)
-    print(client.lookup().city)
-    print(client.lookup().latitude)
-    print(client.lookup().longitude)
     
