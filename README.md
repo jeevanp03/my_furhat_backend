@@ -1,7 +1,3 @@
-Below is the updated README with the changes requested. The reference to the non-existent top-level tools.py has been removed, and the instructions now clarify the hybrid dependency management flow using Poetry and pip.
-
----
-
 # Conversational Agent Project
 
 This project implements an advanced conversational agent that can:
@@ -11,7 +7,7 @@ This project implements an advanced conversational agent that can:
 - Integrate with external APIs (Foursquare, OpenStreetMap, Overpass, IPData) for location-based or IP-based queries.
 - Generate natural language responses via Large Language Models (LLMs) such as HuggingFace Transformers or Llama Cpp.
 
-It includes **FastAPI** endpoints for synchronous/asynchronous interaction, **LangGraph**-based state machines for multi-step conversation flows, and optional classification tools.
+It includes **FastAPI** endpoints for synchronous/asynchronous interaction, **LangGraph**-based state machines for multi-step conversation flows, and classification tools.
 
 ---
 
@@ -27,6 +23,10 @@ It includes **FastAPI** endpoints for synchronous/asynchronous interaction, **La
   - [Usage](#usage)
     - [Running the FastAPI Server](#running-the-fastapi-server)
     - [Interactive Conversations \& Tests](#interactive-conversations--tests)
+    - [Interacting with the API Endpoints](#interacting-with-the-api-endpoints)
+      - [1. Interactive API Documentation](#1-interactive-api-documentation)
+      - [2. Using cURL Commands](#2-using-curl-commands)
+      - [3. Using a Python Script with Requests](#3-using-a-python-script-with-requests)
   - [Managing Dependencies with Poetry and pip](#managing-dependencies-with-poetry-and-pip)
     - [Activating the Poetry Environment](#activating-the-poetry-environment)
     - [Additional Troubleshooting Steps](#additional-troubleshooting-steps)
@@ -83,7 +83,7 @@ A simplified view of the repository (showing the most important directories and 
 
 ## Requirements & Installation
 
-This project uses a hybrid dependency management approach: some dependencies are installed via pip into your environment, and others are managed by Poetry (tracked in the poetry.lock file).
+This project uses a hybrid dependency management approach: some dependencies are installed via pip into your environment, and others are managed by Poetry (tracked in the `poetry.lock` file).
 
 1. **Clone the Repository**
 
@@ -100,10 +100,10 @@ This project uses a hybrid dependency management approach: some dependencies are
    poetry install
    ```
 
-   This will create or update the `poetry.lock` file and install the dependencies into Poetry’s virtual environment.
+   This will update the `poetry.lock` file and install dependencies into Poetry’s virtual environment.
 
 3. **(Optional) Install Additional pip Dependencies**  
-   If there are any extra dependencies provided via a `requirements.txt` file, you can install them after activating the Poetry environment:
+   If there is a `requirements.txt` file with extra dependencies, activate your environment and run:
    ```bash
    pip install -r requirements.txt
    ```
@@ -196,10 +196,87 @@ There are multiple ways to test or interact with the conversation agent:
    ```bash
    poetry run python middleware/main.py
    ```
-   Or, if it's a FastAPI service:
+   Or, if it’s a FastAPI service:
    ```bash
    uvicorn middleware.main:app --reload
    ```
+
+### Interacting with the API Endpoints
+
+Now that your server is running, you have several options to test the endpoints:
+
+#### 1. Interactive API Documentation
+
+FastAPI automatically provides interactive docs:
+
+- Open your browser and navigate to [http://localhost:8000/docs](http://localhost:8000/docs) for the Swagger UI.
+- Alternatively, visit [http://localhost:8000/redoc](http://localhost:8000/redoc).
+
+From there, you can:
+
+- Click on the `/ask` endpoint, click **"Try it out"**, and enter a JSON payload such as:
+  ```json
+  {
+    "content": "What is the document about?"
+  }
+  ```
+  Then click **Execute** to see the response.
+- Similarly, test the `/transcribe` and `/response` endpoints.
+
+#### 2. Using cURL Commands
+
+Open a terminal and run the following commands:
+
+**Test `/ask`:**
+
+```bash
+curl -X POST "http://localhost:8000/ask" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "What is the document about?"}'
+```
+
+**Test `/transcribe`:**
+
+```bash
+curl -X POST "http://localhost:8000/transcribe" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Tell me more about the document."}'
+```
+
+**Test `/response`:**
+
+```bash
+curl -X GET "http://localhost:8000/response"
+```
+
+#### 3. Using a Python Script with Requests
+
+You can write a simple Python script to test your endpoints:
+
+```python
+import requests
+
+# URLs for the endpoints
+ask_url = "http://localhost:8000/ask"
+transcribe_url = "http://localhost:8000/transcribe"
+response_url = "http://localhost:8000/response"
+
+# Test the /ask endpoint
+ask_payload = {"content": "What is the document about?"}
+ask_response = requests.post(ask_url, json=ask_payload)
+print("Ask Response:", ask_response.json())
+
+# Test the /transcribe endpoint
+transcribe_payload = {"content": "Tell me more about the document."}
+transcribe_response = requests.post(transcribe_url, json=transcribe_payload)
+print("Transcribe Response:", transcribe_response.json())
+
+# Test the /response endpoint
+response = requests.get(response_url)
+print("Latest Agent Response:", response.json())
+```
+
+Running any of these methods will allow you to interact with your FastAPI endpoints and verify that your DocumentAgent is processing the requests correctly.
 
 ---
 
@@ -218,7 +295,7 @@ This project employs a hybrid dependency strategy:
    poetry install
    ```
 2. Activate the Poetry environment (see next section).
-3. If needed, after activating, install extra dependencies from `requirements_poetry.txt`:
+3. If needed, after activating, install extra dependencies from `requirements.txt`:
    ```bash
    pip install -r requirements.txt
    ```
@@ -237,7 +314,7 @@ If that command does not work as expected or you prefer a manual approach, activ
 source $(poetry env info --path)/bin/activate
 ```
 
-This command retrieves the virtual environment's path from `poetry env info --path` and activates it.
+This command retrieves the virtual environment's path from `poetry env info --path` and manually activates it.
 
 ### Additional Troubleshooting Steps
 
@@ -257,6 +334,8 @@ This command retrieves the virtual environment's path from `poetry env info --pa
 - **`llm_tools/tools.py`**: Integration points (tools) that the agent can invoke for location or place queries, referencing the various API clients in `api_clients/`.
 - **`middleware/main.py`**: Additional FastAPI or bridging service to connect the conversation agent with other systems.
 - **`tests/`**: Contains additional tests or integration checks.
+
+---
 
 ## Notes
 
