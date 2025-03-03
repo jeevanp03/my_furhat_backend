@@ -33,7 +33,8 @@ app = FastAPI()
 class Transcription(BaseModel):
     content: str
 
-# Global variable to store the latest agent response.
+# For demonstration purposes, we're using a simple in-memory store.
+# In production, you may wish to use session management or a database.
 latest_response = None
 
 # Instantiate the agent.

@@ -18,7 +18,9 @@ dependencies = [
     "accelerate @ git+https://github.com/huggingface/accelerate.git",
     "torch (>=2.6.0,<3.0.0)",
     "gguf (>=0.10.0)",
-    "protobuf (>=5.29.3,<6.0.0)"
+    "protobuf (>=5.29.3,<6.0.0)",
+    "fastapi (>=0.115.8,<0.116.0)",
+    "uvicorn (>=0.34.0,<0.35.0)"
 ]
 
 [project.scripts]

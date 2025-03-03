@@ -20,7 +20,9 @@ rag_instance = RAG(
 )
 
 # Initialize your chatbot using a Llama model.
-chatbot = create_chatbot("llama", model_id="my_furhat_backend/ggufs_models/SmolLM2-1.7B-Instruct-Q4_K_M.gguf")
+# chatbot = create_chatbot("llama", model_id="my_furhat_backend/ggufs_models/SmolLM2-1.7B-Instruct-Q4_K_M.gguf")
+
+chatbot = create_chatbot("llama")
 
 # Define the conversation state type using TypedDict.
 class State(TypedDict):

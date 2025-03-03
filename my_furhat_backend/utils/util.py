@@ -135,9 +135,13 @@ def clean_output(text: str) -> str:
     Returns:
         str: The cleaned and properly formatted text.
     """
+    # Remove formatting tokens.
     text = text.replace("<|im_start|>", "").replace("<|im_end|>", "")
+    # Remove any double quotes.
+    text = text.replace('"', '').replace('\\"', '')
+    # Normalize whitespace.
     text = " ".join(text.split())
-    # Optionally, ensure the output ends with proper punctuation.
+    # Ensure the text ends with proper punctuation.
     if text and text[-1] not in ".!?":
         text += "."
     return text.strip()
