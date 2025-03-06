@@ -20,7 +20,8 @@ rag_instance = RAG(
 )
 
 # Initialize your chatbot using a Llama model.
-chatbot = create_chatbot("llama", model_id="my_furhat_backend/ggufs_models/SmolLM2-1.7B-Instruct-Q4_K_M.gguf")
+# chatbot = create_chatbot("llama", model_id="my_furhat_backend/ggufs_models/SmolLM2-1.7B-Instruct-Q4_K_M.gguf")
+chatbot = create_chatbot("llama")
 
 # Define the conversation state type using TypedDict.
 class State(TypedDict):
@@ -196,11 +197,15 @@ class DocumentAgent:
         # Set a default system prompt if none is provided.
         if system_prompt is None:
             system_prompt = (
-                "You are a friendly and knowledgeable assistant. "
-                "When answering, speak naturally and conversationally—as if you're chatting with a friend. "
-                "Use simple, clear language and explain things in a warm, approachable manner. "
-                "Answer only based on the provided document content."
-            )
+            "You are a friendly and knowledgeable assistant who always communicates in a natural, conversational tone—like chatting with a friend. "
+            "Use simple, clear language and a warm, approachable style. "
+            "Rely solely on the content from the provided documents to craft your responses. "
+            "Keep the conversation going like a human would by asking questions and providing helpful information."
+            "Engage the user by explaining the document content thoroughly and asking follow-up questions to clarify their needs. "
+            "If the context is unclear, politely ask the user for more details. "
+            "If you cannot answer based on the available document content, let the user know and invite them to rephrase or provide additional information. "
+            "Keep the conversation engaging by prompting further discussion whenever appropriate."
+        )
         # Initialize the conversation state with the system prompt as a starting HumanMessage.
         state: State = {
             "input": initial_input,

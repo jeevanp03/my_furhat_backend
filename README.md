@@ -20,6 +20,9 @@ It includes **FastAPI** endpoints for synchronous/asynchronous interaction, **La
   - [Configuration](#configuration)
     - [Creating Your .env File](#creating-your-env-file)
     - [Using direnv for Environment Management](#using-direnv-for-environment-management)
+  - [Connecting to the EC2 Instance](#connecting-to-the-ec2-instance)
+    - [Using Terminal SSH](#using-terminal-ssh)
+    - [Using VS Code Remote - SSH](#using-vs-code-remote---ssh)
   - [Usage](#usage)
     - [Running the FastAPI Server](#running-the-fastapi-server)
     - [Interactive Conversations \& Tests](#interactive-conversations--tests)
@@ -139,6 +142,12 @@ If you use **direnv** to automatically load environment variables:
   direnv allow
   ```
 
+  You may also need to run:
+
+  ```bash
+  source ~/.zshrc
+  ```
+
   This command will load the file and export the necessary environment variables.
 
 - Your `.envrc` may include:
@@ -146,6 +155,59 @@ If you use **direnv** to automatically load environment variables:
   export PATH="$HOME/.local/bin:$PATH"
   ```
   This ensures that your local binaries are in your PATH.
+
+---
+
+## Connecting to the EC2 Instance
+
+This section provides instructions for connecting to the EC2 instance hosting the Conversational Agent both via a terminal and through VS Code.
+
+### Using Terminal SSH
+
+1. **Instance Details:**
+
+   - **Instance ID:** `i-04ea4401b15d43473`
+   - **Public DNS:** `ec2-51-21-200-54.eu-north-1.compute.amazonaws.com`
+   - **Private Key File:** `Furhat_W25.pem` (the key used to launch the instance)
+
+2. **Prepare Your Private Key:**
+   Ensure your private key is secure (i.e., not publicly viewable) by running:
+
+   ```bash
+   chmod 400 "Furhat_W25.pem"
+   ```
+
+3. **Connect Using SSH:**
+   Open your terminal and run:
+   ```bash
+   ssh -i "Furhat_W25.pem" ec2-user@ec2-51-21-200-54.eu-north-1.compute.amazonaws.com
+   ```
+   When prompted to verify the host's authenticity, type **yes**. Once connected, you'll be logged in as `ec2-user` on your EC2 instance.
+
+### Using VS Code Remote - SSH
+
+VS Code's Remote - SSH extension allows you to seamlessly edit and develop on your remote EC2 instance.
+
+1. **Install the Remote - SSH Extension:**
+
+   - Open VS Code and go to the Extensions view (press `Cmd+Shift+X` on Mac).
+   - Search for "Remote - SSH" (by Microsoft) and install it.
+
+2. **Configure Your SSH Host in VS Code:**
+
+   - Open the Command Palette (`Cmd+Shift+P`).
+   - Select **Remote-SSH: Add New SSH Host...**
+   - Enter the following SSH command:
+     ```bash
+     ssh -i "Furhat_W25.pem" ec2-user@ec2-51-21-200-54.eu-north-1.compute.amazonaws.com
+     ```
+   - Choose to save the configuration (this will typically update your `~/.ssh/config` file).
+
+3. **Connect to the EC2 Instance:**
+   - Open the Command Palette again and select **Remote-SSH: Connect to Host...**
+   - Choose your newly added host.
+   - Accept any host key verification prompts.
+   - VS Code will then open a new window connected to your EC2 instance, allowing you to work on files and run terminals on the remote server.
 
 ---
 
@@ -339,8 +401,7 @@ This command retrieves the virtual environment's path from `poetry env info --pa
 
 ## Notes
 
-- Currently the tools in `llm_tools/tools.py` and the apis in `api_clients` are not being used. They were created at the early stages of the project
-  when the original scope of the project was as an agent that would act as a concierge.
+- Currently the tools in `llm_tools/tools.py` and the apis in `api_clients` are not being used. They were created at the early stages of the project when the original scope of the project was as an agent that would act as a concierge.
 
 ---
 

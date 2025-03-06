@@ -38,8 +38,8 @@ class TextClassifier:
         scores_with_labels = dict(zip(scores["labels"], scores["scores"]))
         
         # Sort the dictionary by scores in descending order.
-        scores_with_labels_ascending = dict(
+        scores_with_labels_descending = dict(
             sorted(scores_with_labels.items(), key=lambda item: item[1], reverse=True)
         )
         
-        return scores_with_labels_ascending
+        return scores_with_labels_descending
