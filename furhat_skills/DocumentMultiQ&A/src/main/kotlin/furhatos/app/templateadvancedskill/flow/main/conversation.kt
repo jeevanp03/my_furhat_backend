@@ -10,6 +10,7 @@ import furhatos.flow.kotlin.*
 import furhatos.nlu.common.*
 import furhatos.app.templateadvancedskill.flow.Parent
 import furhatos.app.templateadvancedskill.flow.lockAttention
+import furhatos.gestures.Gestures
 import kotlinx.coroutines.delay
 
 // Document Q&A state, inheriting from Parent.
@@ -26,10 +27,10 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
         lockAttention = false
     }
 
-    onResponse<Stop> {
-        furhat.say("Okay, ending the conversation. Goodbye!")
-
-    }
+//    onResponse<Stop> {
+//        furhat.say("Okay, ending the conversation. Goodbye!")
+//
+//    }
 
     onResponse<Goodbye> {
         furhat.say("Goodbye!")
@@ -39,10 +40,10 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
     onResponse {
         val userQuestion = it.text.trim()
         // Signal the robot is thinking with a filler utterance and gesture.
-        furhat.say({
+        furhat.say(async = true) {
             +"Let me think..."
             +Gestures.GazeAway(duration = 1.0)
-        }, async = true)
+        }
         // Call the backend /ask endpoint to get an answer.
         val answer = callDocumentAgent(userQuestion)
         furhat.say(answer)
@@ -87,7 +88,6 @@ fun callDocumentAgent(question: String): String {
         val jsonObject = JSONObject(jsonResponse)
         jsonObject.getString("response")
     } catch (e: ConnectException) {
-        furhat.say("I'm having trouble connecting to my brain. Please try again later.")
         println(e)
         "I'm sorry, I cannot process your request right now."
     }

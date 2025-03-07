@@ -1,4 +1,5 @@
-accelerate @ git+https://github.com/huggingface/accelerate.git@90f81986b9014c146d4971531ef8b10d5816233a
+# accelerate @ git+https://github.com/huggingface/accelerate.git@90f81986b9014c146d4971531ef8b10d5816233a
+accelerate>=1.4.0.dev0,<1.5.0
 aiohappyeyeballs==2.4.6
 aiohttp==3.11.12
 aiosignal==1.3.2
@@ -8,7 +9,6 @@ asgiref==3.8.1
 attrs==25.1.0
 backoff==2.2.1
 bcrypt==4.2.1
-bitsandbytes @ git+https://github.com/TimDettmers/bitsandbytes.git@86b6c37a8ad448230cedb60753f63150b603a112
 boto3==1.36.17
 botocore==1.36.17
 build==1.2.2.post1
@@ -64,7 +64,7 @@ langgraph==0.2.70
 langgraph-checkpoint==2.0.12
 langgraph-sdk==0.1.51
 langsmith==0.3.11
-llama_cpp_python==0.3.7
+# llama_cpp_python==0.3.7
 markdown-it-py==3.0.0
 MarkupSafe==3.0.2
 marshmallow==3.26.1
@@ -77,7 +77,7 @@ multidict==6.1.0
 -e git+https://github.com/jeevanp03/my_furhat_backend.git@ac9626a550b801fa72f7108ba657166b68d9f953#egg=my_furhat_backend
 mypy-extensions==1.0.0
 networkx==3.4.2
-numpy==2.2.3
+numpy>=1.26.4,<2.2.3
 oauthlib==3.2.2
 onnxruntime==1.20.1
 opentelemetry-api==1.30.0
@@ -139,7 +139,7 @@ tiktoken==0.9.0
 tokenizers==0.21.0
 torch==2.6.0
 tqdm==4.67.1
-transformers @ git+https://github.com/huggingface/transformers.git@6a876462c308bd7cd7d3ca8e93abaa7d5b02e90e
+transformers>=4.41.0,<5.0.0
 typer==0.15.1
 types-requests==2.32.0.20241016
 typing-inspect==0.9.0

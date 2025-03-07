@@ -2,6 +2,7 @@ package furhatos.app.templateadvancedskill.flow
 
 import furhatos.app.templateadvancedskill.MyAdvancedSkill
 import furhatos.app.templateadvancedskill.flow.main.Idle
+import furhatos.app.templateadvancedskill.flow.main.DocumentWaitingToStart
 import furhatos.app.templateadvancedskill.flow.main.WaitingToStart
 import furhatos.app.templateadvancedskill.flow.paralell.InteractionGlow
 import furhatos.app.templateadvancedskill.setting.*
@@ -17,6 +18,29 @@ import furhatos.flow.kotlin.users
 import furhatos.nlu.LogisticMultiIntentClassifier
 import furhatos.util.CommonUtils
 import java.io.File
+import furhatos.app.templateadvancedskill.setting.DISTANCE_TO_ENGAGE
+import furhatos.flow.kotlin.furhat
+import furhatos.flow.kotlin.state
+import furhatos.flow.kotlin.users
+
+//val Init: State = state {
+//    init {
+//        /** Set our default interaction parameters */
+//        users.setSimpleEngagementPolicy(DISTANCE_TO_ENGAGE, MAX_NUMBER_OF_USERS)
+//    }
+//    onEntry {
+//        /** start interaction */
+//        when {
+//            furhat.isVirtual() -> goto(DocumentWaitingToStart) // Convenient to bypass the need for user when running Virtual Furhat
+//            users.hasAny() -> {
+//                furhat.attend(users.random)
+//                goto(DocumentWaitingToStart)
+//            }
+//            else -> goto(Idle)
+//        }
+//    }
+//
+//}
 
 /** Flow parameters */
 var testMode: Boolean = false

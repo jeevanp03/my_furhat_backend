@@ -2,10 +2,26 @@ package furhatos.app.templateadvancedskill.flow.main
 
 import furhat.libraries.standard.BehaviorLib.AutomaticMovements.randomHeadMovements
 import furhatos.app.templateadvancedskill.flow.Global
-import furhatos.app.templateadvancedskill.flow.log
 import furhatos.app.templateadvancedskill.setting.*
 import furhatos.flow.kotlin.*
 
+
+import furhatos.flow.kotlin.State
+import furhatos.flow.kotlin.furhat
+import furhatos.flow.kotlin.onUserEnter
+import furhatos.flow.kotlin.state
+
+//val Idle: State = state {
+//    onEntry {
+//        furhat.attendNobody()
+//    }
+//
+//    onUserEnter {
+//        furhat.attend(it)
+//        goto(Greeting)
+//    }
+//
+//}
 /**
  * Tip!
  *
@@ -25,7 +41,6 @@ val Idle: State = state(parent = Global) {
 
     onEntry { // on entry performed every time entering the state
         furhat.beIdle() // custom function to set the robot in a specific 'mode'
-        log.info("idling")
     }
 
     onUserEnter {
@@ -47,12 +62,10 @@ val WaitingToStart: State = state(parent = Global) {
         activate(furhatPersona)
         when {
             users.hasAny() -> {
-                log.debug("User present - starting document interaction.")
                 furhat.attend(users.random)
-                goto(furhatos.app.templateadvancedskill.flow.main.DocumentWaitingToStart)
+                goto(DocumentWaitingToStart)
             }
             else -> {
-                log.debug("No users present - idling.")
                 goto(Idle)
             }
         }
@@ -61,14 +74,12 @@ val WaitingToStart: State = state(parent = Global) {
     onReentry {
         when {
             !users.hasAny() -> goto(Idle)
-            furhat.isAttended() -> goto(Active)
-            else -> log.debug("keep idling") // do nothing particular - just keep idling
+            furhat.isAttended() -> goto(DocumentWaitingToStart)
         }
     }
     onUserAttend {
-        log.debug("user ${it.id} attended in ${thisState.name}")
         furhat.attend(it)
-        goto(Active)
+        goto(DocumentWaitingToStart)
     }
     onUserLeave(instant = true) {
         when { // "it" is the user that left

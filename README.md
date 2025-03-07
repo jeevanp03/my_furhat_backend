@@ -23,6 +23,9 @@ It includes **FastAPI** endpoints for synchronous/asynchronous interaction, **La
   - [Connecting to the EC2 Instance](#connecting-to-the-ec2-instance)
     - [Using Terminal SSH](#using-terminal-ssh)
     - [Using VS Code Remote - SSH](#using-vs-code-remote---ssh)
+  - [Starting the Dev Container](#starting-the-dev-container)
+    - [Locally](#locally)
+    - [On the EC2 Instance](#on-the-ec2-instance)
   - [Usage](#usage)
     - [Running the FastAPI Server](#running-the-fastapi-server)
     - [Interactive Conversations \& Tests](#interactive-conversations--tests)
@@ -105,11 +108,17 @@ This project uses a hybrid dependency management approach: some dependencies are
 
    This will update the `poetry.lock` file and install dependencies into Poetry’s virtual environment.
 
-3. **(Optional) Install Additional pip Dependencies**  
-   If there is a `requirements.txt` file with extra dependencies, activate your environment and run:
+3. **Activate the Poetry Environment**  
+   It's important to activate your Poetry environment before installing any additional pip dependencies. See the [Activating the Poetry Environment](#activating-the-poetry-environment) section below.
+
+4. **(Optional) Install Additional pip Dependencies**  
+   If there is a `requirements.txt` file with extra dependencies, activate your Poetry environment first and then run:
+
    ```bash
    pip install -r requirements.txt
    ```
+
+   If you are having issues with building the wheel for `llama.cpp` remove it from the requirements file and download the applicable version manually based on your hardware. More details can be found here: **https://github.com/abetlen/llama-cpp-python**.
 
 ---
 
@@ -168,19 +177,19 @@ This section provides instructions for connecting to the EC2 instance hosting th
 
    - **Instance ID:** `i-04ea4401b15d43473`
    - **Public DNS:** `ec2-51-21-200-54.eu-north-1.compute.amazonaws.com`
-   - **Private Key File:** `Furhat_W25.pem` (the key used to launch the instance)
+   - **Private Key File:** `Furhat_W25.pem` (the key used to launch the instance, you will have to create your own)
 
 2. **Prepare Your Private Key:**
    Ensure your private key is secure (i.e., not publicly viewable) by running:
 
    ```bash
-   chmod 400 "Furhat_W25.pem"
+   chmod 400 "path/to/Furhat_W25.pem"
    ```
 
 3. **Connect Using SSH:**
    Open your terminal and run:
    ```bash
-   ssh -i "Furhat_W25.pem" ec2-user@ec2-51-21-200-54.eu-north-1.compute.amazonaws.com
+   ssh -i "path/to/Furhat_W25.pem" ec2-user@ec2-51-21-200-54.eu-north-1.compute.amazonaws.com
    ```
    When prompted to verify the host's authenticity, type **yes**. Once connected, you'll be logged in as `ec2-user` on your EC2 instance.
 
@@ -199,7 +208,7 @@ VS Code's Remote - SSH extension allows you to seamlessly edit and develop on yo
    - Select **Remote-SSH: Add New SSH Host...**
    - Enter the following SSH command:
      ```bash
-     ssh -i "Furhat_W25.pem" ec2-user@ec2-51-21-200-54.eu-north-1.compute.amazonaws.com
+     ssh -i "path/to/Furhat_W25.pem" ec2-user@ec2-51-21-200-54.eu-north-1.compute.amazonaws.com
      ```
    - Choose to save the configuration (this will typically update your `~/.ssh/config` file).
 
@@ -211,6 +220,43 @@ VS Code's Remote - SSH extension allows you to seamlessly edit and develop on yo
 
 ---
 
+## Starting the Dev Container
+
+This section explains how to launch an interactive development container using VS Code’s Remote - Containers extension. You can use this container for interactive development either locally or on your EC2 instance.
+
+### Locally
+
+1. **Open in Dev Container:**
+   - Open your project in VS Code.
+   - Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) and select **Remote-Containers: Reopen in Container**.
+   - VS Code will build the container based on your `.devcontainer` configuration and open a new window connected to the container.
+   - You now have an interactive development environment with all your dependencies installed.
+
+### On the EC2 Instance
+
+1. **Clone Your Repository on the EC2 Instance:**
+
+   - SSH into your EC2 instance:
+     ```bash
+     ssh -i "path/to/Furhat_W25.pem" ec2-user@ec2-51-21-200-54.eu-north-1.compute.amazonaws.com
+     ```
+   - Clone your repository:
+     ```bash
+     git clone https://github.com/yourusername/yourproject.git
+     cd yourproject
+     ```
+
+2. **Connect to the EC2 Instance Using VS Code Remote - SSH:**
+
+   - On your local machine, open VS Code and use the Remote - SSH extension to connect to your EC2 instance (as described in the [Connecting to the EC2 Instance](#connecting-to-the-ec2-instance) section).
+
+3. **Open the Dev Container on EC2:**
+   - In the VS Code window connected to the EC2 instance, open the Command Palette and select **Remote-Containers: Reopen in Container**.
+   - VS Code will use the dev container configuration (the same `.devcontainer` folder) to build and attach the dev container on the EC2 instance.
+   - Now, you have an interactive development environment running on your EC2 instance that mirrors your local dev container setup.
+
+---
+
 ## Usage
 
 ### Running the FastAPI Server
@@ -218,13 +264,13 @@ VS Code's Remote - SSH extension allows you to seamlessly edit and develop on yo
 To start the server (after ensuring your environment is activated):
 
 ```bash
-poetry run uvicorn my_furhat_backend.main:app --host 0.0.0.0 --port 8000
+poetry run uvicorn middleware.main:app --host 0.0.0.0 --port 8000
 ```
 
 Or, if using pip/venv:
 
 ```bash
-uvicorn my_furhat_backend.main:app --host 0.0.0.0 --port 8000
+uvicorn middleware.main:app --host 0.0.0.0 --port 8000
 ```
 
 **Endpoints:**
@@ -256,7 +302,7 @@ There are multiple ways to test or interact with the conversation agent:
 3. **Middleware Service**  
    If you have a middleware service at `middleware/main.py`, run:
    ```bash
-   poetry run python middleware/main.py
+   poetry run python middleware.main.py
    ```
    Or, if it’s a FastAPI service:
    ```bash
@@ -356,8 +402,8 @@ This project employs a hybrid dependency strategy:
    poetry lock
    poetry install
    ```
-2. Activate the Poetry environment (see next section).
-3. If needed, after activating, install extra dependencies from `requirements.txt`:
+2. **Activate the Poetry environment** (see [Activating the Poetry Environment](#activating-the-poetry-environment)).
+3. Once inside the Poetry environment, if needed, install extra dependencies from `requirements.txt`:
    ```bash
    pip install -r requirements.txt
    ```
@@ -401,7 +447,7 @@ This command retrieves the virtual environment's path from `poetry env info --pa
 
 ## Notes
 
-- Currently the tools in `llm_tools/tools.py` and the apis in `api_clients` are not being used. They were created at the early stages of the project when the original scope of the project was as an agent that would act as a concierge.
+- Currently, the tools in `llm_tools/tools.py` and the APIs in `api_clients` are not being used. They were created at the early stages of the project when the original scope was for an agent acting as a concierge.
 
 ---
 

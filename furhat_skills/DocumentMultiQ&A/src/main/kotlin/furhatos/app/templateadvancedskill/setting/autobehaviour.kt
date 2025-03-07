@@ -5,7 +5,7 @@ import furhatos.app.templateadvancedskill.flow.log
 import furhatos.app.templateadvancedskill.flow.main.DeepSleep
 import furhatos.app.templateadvancedskill.flow.main.Idle
 import furhatos.app.templateadvancedskill.flow.main.Nap
-import furhatos.app.templateadvancedskill.flow.main.
+import furhatos.app.templateadvancedskill.flow.main.WaitingToStart
 import furhatos.app.templateadvancedskill.flow.noInput
 import furhatos.app.templateadvancedskill.flow.noMatch
 import furhatos.app.templateadvancedskill.utils.NoUsersPresentEvent

@@ -1,7 +1,6 @@
 package furhatos.app.templateadvancedskill.flow.main
 
 import furhatos.app.templateadvancedskill.flow.Parent
-import furhatos.app.templateadvancedskill.flow.log
 import furhatos.app.templateadvancedskill.nlu.HowAreYouIntent
 import furhatos.app.templateadvancedskill.nlu.NiceToMeetYouIntent
 import furhatos.app.templateadvancedskill.responses.gestures.hearSpeechGesture
@@ -19,7 +18,6 @@ import furhatos.nlu.common.Greeting
 val Active: State = state(Parent) {
     onEntry {
         furhat.beActive()
-        log.debug("now I'm listening")
 
         // We're leaving the initiative to the user and extending the listen timeout from default 5000 ms to 8000 ms.
         furhat.listen(8000)

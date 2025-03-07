@@ -41,7 +41,7 @@ fun GreetUser(response: Response<*>? = null): State = state(Parent) {
                 +"Hi there!"
             }
         }
-        goto(Active)
+        goto(DocumentWaitingToStart)
     }
     onResponse<HowAreYouIntent> {
         furhat.say {
@@ -53,7 +53,7 @@ fun GreetUser(response: Response<*>? = null): State = state(Parent) {
             Gestures.BigSmile
         }
         call(HowAreYou) // We'll return the pleasantries, but then end the conversation.
-        goto(Active)
+        goto(DocumentWaitingToStart)
     }
     onResponse<NiceToMeetYouIntent> {
         furhat.say {
@@ -65,13 +65,13 @@ fun GreetUser(response: Response<*>? = null): State = state(Parent) {
             +Gestures.BigSmile
         }
         call(HowAreYou) // We'll return the pleasantries, but then end the conversation.
-        goto(Active)
+        goto(DocumentWaitingToStart)
     }
     onResponse {
-        goto(Active)
+        goto(DocumentWaitingToStart)
     }
     onNoResponse {
-        goto(Active)
+        goto(DocumentWaitingToStart)
     }
 
 }
@@ -81,7 +81,7 @@ fun main(args: Array<String>) {
     println("Type to test the intents of this state. (please ignore the initial error messages)")
     while (true) {
         println("Enter your user response...")
-        val utterance = readLine()
+        val utterance = readlnOrNull()
         val results = GreetUser(null).getIntentClassifier(lang = Language.ENGLISH_US).classify(utterance!!)
         if (results.isEmpty()) {
             println("No match")
