@@ -1,16 +1,16 @@
-package furhatos.app.documentagent.flow
+package furhatos.app.templateadvancedskill.flow.main
 
 import furhatos.flow.kotlin.*
 import okhttp3.*
 import org.json.JSONObject
 import java.net.ConnectException
 import okio.IOException
-import furhatos.event.Event
-import furhatos.flow.kotlin.*
 import furhatos.nlu.common.*
 import furhatos.app.templateadvancedskill.flow.Parent
 import furhatos.gestures.Gestures
-import kotlinx.coroutines.delay
+import furhatos.app.templateadvancedskill.params.LOCAL_BACKEND_URL
+import furhatos.app.templateadvancedskill.params.AWS_SERVER_URL
+
 
 // Document Q&A state, inheriting from Parent.
 fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
@@ -71,7 +71,8 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
 
 // Helper function to call the /ask endpoint.
 fun callDocumentAgent(question: String): String {
-    val baseUrl = "http://localhost:8000/ask"
+//    val baseUrl = "http://$LOCAL_BACKEND_URL:8000/ask"
+    val baseUrl = "http://$AWS_SERVER_URL:8000/ask"
     val client = OkHttpClient()
     return try {
         val request = Request.Builder()

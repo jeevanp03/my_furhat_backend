@@ -2,12 +2,14 @@ package furhatos.app.templateadvancedskill.flow.main
 
 import furhatos.flow.kotlin.*
 // Import the documentInfoQnA state from its package (adjust the package path if needed)
-import furhatos.app.documentagent.flow.documentInfoQnA
 import furhatos.app.templateadvancedskill.flow.Parent
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import org.json.JSONObject
 import java.io.IOException
+import furhatos.app.templateadvancedskill.params.LOCAL_BACKEND_URL
+import furhatos.app.templateadvancedskill.params.AWS_SERVER_URL
+
 
 val SelectDocument: State = state(parent = Parent) {
     onEntry {
@@ -35,7 +37,8 @@ val SelectDocument: State = state(parent = Parent) {
 // then parses and returns the 'response' field from the returned JSON.
 fun callGetDocs(userInput: String): String {
     // Your FastAPI server's address (adjust if needed)
-    val url = "http://localhost:8000/get_docs"
+//    val url = "http://$LOCAL_BACKEND_URL:8000/get_docs"
+    val url = "http://$AWS_SERVER_URL:8000/get_docs"
     val client = OkHttpClient()
 
     // Build JSON payload.

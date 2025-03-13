@@ -7,3 +7,4 @@ build/
 /.idea
 save_flow.xml
 *.iml
+furhat_skills/Conversation/src/main/kotlin/furhatos/app/templateadvancedskill/parms.kt
