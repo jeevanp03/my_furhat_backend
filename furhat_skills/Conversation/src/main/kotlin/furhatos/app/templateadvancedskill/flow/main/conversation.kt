@@ -2,6 +2,8 @@ package furhatos.app.templateadvancedskill.flow.main
 
 import furhatos.flow.kotlin.*
 import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.net.ConnectException
 import okio.IOException
@@ -10,6 +12,7 @@ import furhatos.app.templateadvancedskill.flow.Parent
 import furhatos.gestures.Gestures
 import furhatos.app.templateadvancedskill.params.LOCAL_BACKEND_URL
 import furhatos.app.templateadvancedskill.params.AWS_SERVER_URL
+import java.util.concurrent.TimeUnit
 
 
 // Document Q&A state, inheriting from Parent.
@@ -36,6 +39,15 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
 
     }
 
+    onResponse<Yes> {
+        reentry()
+    }
+
+    onResponse<No> {
+        furhat.say("Alright, thank you for the conversation. Goodbye!")
+
+    }
+
     onResponse {
         val userQuestion = it.text.trim()
         // Signal the robot is thinking with a filler utterance and gesture.
@@ -47,15 +59,6 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
         val answer = callDocumentAgent(userQuestion)
         furhat.say(answer)
         furhat.ask("Do you have another question about $documentName?")
-    }
-
-    onResponse<Yes> {
-        reentry()
-    }
-
-    onResponse<No> {
-        furhat.say("Alright, thank you for the conversation. Goodbye!")
-
     }
 
     onNoResponse {
@@ -71,14 +74,23 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
 
 // Helper function to call the /ask endpoint.
 fun callDocumentAgent(question: String): String {
-//    val baseUrl = "http://$LOCAL_BACKEND_URL:8000/ask"
-    val baseUrl = "http://$AWS_SERVER_URL:8000/ask"
-    val client = OkHttpClient()
+    val baseUrl = "http://$LOCAL_BACKEND_URL:8000"
+    // Configure OkHttpClient with longer timeouts
+    val client = OkHttpClient.Builder()
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .build()
+
     return try {
+        // Create JSON payload
+        val jsonPayload = JSONObject().put("content", question).toString()
+        val requestBody = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
+
         val request = Request.Builder()
-                .url("$baseUrl/ask")
-                .post(FormBody.Builder().add("content", question).build())
-                .build()
+            .url("$baseUrl/ask")
+            .post(requestBody)
+            .build()
 
         val response = client.newCall(request).execute()
         if (!response.isSuccessful) {

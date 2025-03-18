@@ -37,8 +37,8 @@ val SelectDocument: State = state(parent = Parent) {
 // then parses and returns the 'response' field from the returned JSON.
 fun callGetDocs(userInput: String): String {
     // Your FastAPI server's address (adjust if needed)
-//    val url = "http://$LOCAL_BACKEND_URL:8000/get_docs"
-    val url = "http://$AWS_SERVER_URL:8000/get_docs"
+    val url = "http://$LOCAL_BACKEND_URL:8000/get_docs"
+//    val url = "http://$AWS_SERVER_URL:8000/get_docs"
     val client = OkHttpClient()
 
     // Build JSON payload.

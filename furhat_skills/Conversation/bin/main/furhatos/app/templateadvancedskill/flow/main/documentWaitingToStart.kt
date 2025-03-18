@@ -10,7 +10,12 @@ val DocumentWaitingToStart: State = state(parent = Parent) {
 
     // When any response is detected, transition to SelectDocument.
     onResponse {
-        goto(SelectDocument)
+//        goto(SelectDocument)
+        val userInput = it.text.trim()
+        // Call the API endpoint /get_docs to perform document retrieval/classification.
+        val bestDocName = callGetDocs(userInput)
+        // Transition to the Q&A state for the matched document.
+        goto(documentInfoQnA(bestDocName))
     }
 
     onNoResponse {
