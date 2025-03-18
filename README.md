@@ -16,19 +16,21 @@ It includes **FastAPI** endpoints for synchronous/asynchronous interaction, **La
 - [Conversational Agent Project](#conversational-agent-project)
   - [Table of Contents](#table-of-contents)
   - [Project Structure](#project-structure)
-  - [Requirements \& Installation](#requirements--installation)
+  - [Requirements & Installation](#requirements--installation)
   - [Configuration](#configuration)
     - [Creating Your .env File](#creating-your-env-file)
     - [Using direnv for Environment Management](#using-direnv-for-environment-management)
   - [Connecting to the EC2 Instance](#connecting-to-the-ec2-instance)
     - [Using Terminal SSH](#using-terminal-ssh)
     - [Using VS Code Remote - SSH](#using-vs-code-remote---ssh)
+  - [Cloning the Repository & Running the Dev Container on the EC2 Instance](#cloning-the-repository--running-the-dev-container-on-the-ec2-instance)
   - [Starting the Dev Container](#starting-the-dev-container)
     - [Locally](#locally)
-    - [On the EC2 Instance](#on-the-ec2-instance)
+    - [On the EC2 Instance via VS Code](#on-the-ec2-instance-via-vs-code)
+    - [Manual Docker Run on the EC2 Instance](#manual-docker-run-on-the-ec2-instance)
   - [Usage](#usage)
     - [Running the FastAPI Server](#running-the-fastapi-server)
-    - [Interactive Conversations \& Tests](#interactive-conversations--tests)
+    - [Interactive Conversations & Tests](#interactive-conversations--tests)
     - [Interacting with the API Endpoints](#interacting-with-the-api-endpoints)
       - [1. Interactive API Documentation](#1-interactive-api-documentation)
       - [2. Using cURL Commands](#2-using-curl-commands)
@@ -217,6 +219,76 @@ VS Code's Remote - SSH extension allows you to seamlessly edit and develop on yo
    - Choose your newly added host.
    - Accept any host key verification prompts.
    - VS Code will then open a new window connected to your EC2 instance, allowing you to work on files and run terminals on the remote server.
+
+---
+
+#### Cloning the Repository & Setting Up Docker on the EC2 Instance
+
+If you haven't already set up your EC2 instance with Git and Docker, follow these steps:
+
+1. **Install Git:**
+
+   ```bash
+   sudo yum update -y
+   sudo yum install git -y
+   ```
+
+2. **Install Docker:**
+
+   ```bash
+   sudo yum install docker -y
+   ```
+
+   _(For Amazon Linux 2, you might also use `sudo amazon-linux-extras install docker -y` if available.)_
+
+3. **Start Docker and Configure Permissions:**
+
+   ```bash
+   sudo systemctl start docker
+   sudo systemctl enable docker
+   sudo usermod -aG docker ec2-user
+   newgrp docker  # Alternatively, log out and log back in to apply the group change
+   ```
+
+4. **Clone the Repository:**
+
+   ```bash
+   git clone https://github.com/yourusername/yourproject.git
+   cd yourproject
+   ```
+
+5. **Build and Run the Dev Container:**
+
+   Assuming your project structure is as follows:
+
+   ```
+   /my-furhat-backend
+   ├── .devcontainer
+   │   ├── devcontainer.json
+   │   └── Dockerfile
+   ├── pyproject.toml
+   ├── poetry.lock
+   └── ... (other project files)
+   ```
+
+   From the project root, build the Docker image:
+
+   ```bash
+   docker build -t my-furhat-backend -f .devcontainer/Dockerfile .
+   ```
+
+   Then, run the container interactively:
+
+   ```bash
+   docker run -it --rm -p 8000:8000 -v "$(pwd)":/app my-furhat-backend
+   ```
+
+   This command:
+
+   - Runs the container in interactive mode with a terminal (`-it`)
+   - Automatically removes the container when it exits (`--rm`)
+   - Maps port 8000 of the container to port 8000 on the host (`-p 8000:8000`)
+   - Mounts your current project directory into `/app` inside the container (`-v "$(pwd)":/app`)
 
 ---
 

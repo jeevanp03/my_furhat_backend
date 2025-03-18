@@ -1,5 +1,5 @@
 # accelerate @ git+https://github.com/huggingface/accelerate.git@90f81986b9014c146d4971531ef8b10d5816233a
-accelerate>=1.4.0.dev0,<1.5.0
+accelerate>=1.4.0.dev0
 aiohappyeyeballs==2.4.6
 aiohttp==3.11.12
 aiosignal==1.3.2
