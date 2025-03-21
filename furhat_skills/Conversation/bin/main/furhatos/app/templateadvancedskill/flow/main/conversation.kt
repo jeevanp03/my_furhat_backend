@@ -20,32 +20,15 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
 
     onEntry {
         // Lock the attended user during this conversation.
-
-        furhat.ask("Hello! What would you like to know about $documentName?")
+        furhat.say("Hello! What would you like to know about $documentName?")
     }
 
     onExit {
         // Release the attention lock when leaving this state.
-
     }
-
-//    onResponse<Stop> {
-//        furhat.say("Okay, ending the conversation. Goodbye!")
-//
-//    }
 
     onResponse<Goodbye> {
         furhat.say("Goodbye!")
-
-    }
-
-    onResponse<Yes> {
-        reentry()
-    }
-
-    onResponse<No> {
-        furhat.say("Alright, thank you for the conversation. Goodbye!")
-
     }
 
     onResponse {
@@ -58,49 +41,78 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
         // Call the backend /ask endpoint to get an answer.
         val answer = callDocumentAgent(userQuestion)
         furhat.say(answer)
-        furhat.ask("Do you have another question about $documentName?")
+
+        // Now call the new "engage user" API to get a dynamic follow-up prompt.
+        val followUpPrompt = callEngageUser(documentName, answer)
+        furhat.ask(followUpPrompt)
+    }
+
+    onResponse<Yes> {
+        reentry()
+    }
+
+    onResponse<No> {
+        furhat.say("Alright, thank you for the conversation. Goodbye!")
     }
 
     onNoResponse {
         furhat.ask("I didn't catch that. Could you please repeat your question?")
         reentry()
     }
-
-//    onUserSilence {
-//        furhat.say("I'm still here—please ask your question when you're ready.")
-//        reentry()
-//    }
 }
 
 // Helper function to call the /ask endpoint.
 fun callDocumentAgent(question: String): String {
-    val baseUrl = "http://$LOCAL_BACKEND_URL:8000"
-    // Configure OkHttpClient with longer timeouts
+    val baseUrl = "http://localhost:8000"
     val client = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
-
     return try {
-        // Create JSON payload
-        val jsonPayload = JSONObject().put("content", question).toString()
-        val requestBody = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
-
+        val requestBody = JSONObject().put("content", question).toString().toRequestBody("application/json; charset=utf-8".toMediaType())
         val request = Request.Builder()
             .url("$baseUrl/ask")
             .post(requestBody)
             .build()
 
-        val response = client.newCall(request).execute()
-        if (!response.isSuccessful) {
-            throw IOException("Unexpected response: $response")
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("Unexpected response: $response")
+            val jsonResponse = response.body?.string() ?: throw IOException("Empty response")
+            val jsonObject = JSONObject(jsonResponse)
+            jsonObject.getString("response")
         }
-        val jsonResponse = response.body?.string() ?: throw IOException("Empty response")
-        val jsonObject = JSONObject(jsonResponse)
-        jsonObject.getString("response")
     } catch (e: ConnectException) {
         println(e)
         "I'm sorry, I cannot process your request right now."
+    }
+}
+
+// New helper function to call the "engage user" API endpoint.
+// This function sends the current document context to the /engage endpoint
+// and expects a JSON response with a "prompt" field containing a follow-up question.
+fun callEngageUser(documentName: String, answer: String): String {
+    val baseUrl = "http://localhost:8000"
+    val client = OkHttpClient()
+    return try {
+        val map = JSONObject()
+        map.put("document", documentName)
+        map.put("answer", answer)
+        val requestBody = map.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+
+        val request = Request.Builder()
+            .url("$baseUrl/engage")
+            .post(requestBody)
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("Unexpected response: $response")
+            val jsonResponse = response.body?.string() ?: throw IOException("Empty response")
+            val jsonObject = JSONObject(jsonResponse)
+            jsonObject.getString("prompt")
+        }
+    } catch (e: ConnectException) {
+        println(e)
+        "Do you have any other questions?"
     }
 }

@@ -175,7 +175,7 @@ class RAG:
             List[Document]: A list of document chunks reordered by relevance.
         """
         # Initialize a cross-encoder model for reranking
-        model = HuggingFaceCrossEncoder(model_name="BAAI/bge-reranker-v2-m3")
+        model = HuggingFaceCrossEncoder(model_name="mixedbread-ai/mxbai-rerank-base-v1")
         # Set up the reranker using the cross-encoder model
         compressor = CrossEncoderReranker(model=model, top_n=top_n)
         # Create a contextual compression retriever that uses the vector store as the base retriever

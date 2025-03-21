@@ -36,7 +36,7 @@ class BaseLLM(ABC):
 
 # Concrete implementation of BaseLLM using HuggingFace models.
 class HuggingFaceLLM(BaseLLM):
-    def __init__(self, model_id: str = "HuggingFaceTB/SmolLM2-1.7B-Instruct", **kwargs):
+    def __init__(self, model_id: str = "HuggingFaceTB/SmolLM2-1.7B-Instruct", task="text-generation", **kwargs):
         """
         Initialize the HuggingFaceLLM with a specified model and generation parameters.
         
@@ -51,7 +51,7 @@ class HuggingFaceLLM(BaseLLM):
         kwargs.setdefault("temperature", 0.1)
         kwargs.setdefault("repetition_penalty", 1.03)
         # Create a chat interface using the HuggingFaceEndpoint
-        self.chat_llm = ChatHuggingFace(llm=self.__create_endpoint(model_id, **kwargs))
+        self.chat_llm = ChatHuggingFace(llm=self.__create_endpoint(model_id, task, **kwargs))
         # Uncomment the line below to pre-bind external tools if needed:
         # self.chat_llm_with_tools = self.chat_llm.bind_tools(all_tools)
 
@@ -67,7 +67,7 @@ class HuggingFaceLLM(BaseLLM):
         """
         return ChatHuggingFace(llm=HuggingFacePipeline(pipeline=pipeline_instance))
     
-    def __create_endpoint(self, model_id: str, **kwargs):
+    def __create_endpoint(self, model_id: str, task: str, **kwargs):
         """
         Create a HuggingFaceEndpoint for text-generation with the provided model.
         
@@ -80,7 +80,7 @@ class HuggingFaceLLM(BaseLLM):
         """
         return HuggingFaceEndpoint(
             repo_id=model_id,
-            task="text-generation",
+            task=task,
             huggingfacehub_api_token=config["HF_KEY"],
             # Uncomment the line below to enable streaming output callbacks:
             # callbacks=[StreamingStdOutCallbackHandler()],
