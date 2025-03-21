@@ -75,6 +75,7 @@ class EngageRequest(BaseModel):
 # For demonstration purposes, using a simple in-memory store for the latest response.
 # In production, consider using a more robust solution (e.g., session management or a database).
 latest_response = None
+context = None
 
 # Instantiate the DocumentAgent to handle LLM processing.
 agent = DocumentAgent()
@@ -201,7 +202,9 @@ async def engage(engage_request: EngageRequest):
     """
     try:
         # Retrieve context for the given document.
-        context = await asyncio.to_thread(get_document_context, engage_request.document)
+        global context
+        if not context:
+            context = await asyncio.to_thread(get_document_context, engage_request.document)
         # Combine the answer with the retrieved context.
         combined_text = f"{engage_request.answer}\nContext: {context}"
         # Generate a summary of the combined text.
