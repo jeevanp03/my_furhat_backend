@@ -32,6 +32,9 @@ Functions:
 
     generate_followup_prompt(summary: str) -> str
         Generates a follow-up prompt for the assistant based on the provided summary.
+    
+    classify_text(content: str, docs: list) -> dict
+        Ranks a list of documents based on their similarity to the provided content using a text classifier.
 """
 
 import re
@@ -40,10 +43,12 @@ import os
 
 # Import necessary classes and instances from the backend.
 from my_furhat_backend.models.llm_factory import HuggingFaceLLM
+from my_furhat_backend.models.classifier import TextClassifier
 from my_furhat_backend.agents.document_agent import rag_instance, chatbot
 
 # Instantiate a summarizer using a pre-trained model for text summarization.
 summarizer = HuggingFaceLLM(model_id="sshleifer/distilbart-cnn-12-6", task="summarization")
+text_classifier = TextClassifier()
 
 
 def clean_hc_response(response_text: str) -> str:
@@ -291,3 +296,20 @@ def generate_followup_prompt(summary: str) -> str:
     )
     # Query the chatbot instance with the generated prompt and return the result.
     return chatbot.query(prompt)
+
+
+def classify_text(content: str, docs: list) -> dict:
+    """
+    Rank a list of documents based on their similarity to the provided content.
+
+    This function ranks the documents by their similarity to the input content using a text classifier.
+    The classifier assigns a score to each document, with higher scores indicating greater relevance.
+
+    Parameters:
+        content (str): The content to be used for ranking the documents.
+        docs (list): A list of document titles or identifiers to be ranked.
+
+    Returns:
+        dict: A dictionary mapping document titles to their corresponding relevance scores.
+    """
+    return text_classifier.classify(content, docs)

@@ -42,9 +42,9 @@ from my_furhat_backend.utils.util import (
     get_list_docs, 
     summarize_text, 
     get_document_context, 
-    generate_followup_prompt
+    generate_followup_prompt,
+    classify_text
 )
-from my_furhat_backend.models.classifier import TextClassifier
 
 # Initialize the FastAPI application.
 app = FastAPI()
@@ -176,7 +176,7 @@ async def get_docs(transcription: Transcription):
             # If only one document exists, return it directly.
             return {"response": docs[0]}
         # If multiple documents are found, rank them using the text classifier.
-        ranked_docs = await asyncio.to_thread(TextClassifier().classify, transcription.content, docs)
+        ranked_docs = await asyncio.to_thread(classify_text, transcription.content, docs)
         # Assuming ranked_docs is a dictionary with documents as keys and scores as values,
         # select the top-ranked document (first key in the dictionary).
         top_doc = list(ranked_docs.keys())[0] if ranked_docs else "No document ranked."
