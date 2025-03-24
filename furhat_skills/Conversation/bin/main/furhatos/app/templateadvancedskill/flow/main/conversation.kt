@@ -20,7 +20,7 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
 
     onEntry {
         // Lock the attended user during this conversation.
-        furhat.say("Hello! What would you like to know about $documentName?")
+        furhat.ask("Hello! What would you like to know about $documentName?")
     }
 
     onExit {
@@ -65,9 +65,9 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
 fun callDocumentAgent(question: String): String {
     val baseUrl = "http://localhost:8000"
     val client = OkHttpClient.Builder()
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(200, TimeUnit.SECONDS)
+        .readTimeout(200, TimeUnit.SECONDS)
+        .writeTimeout(200, TimeUnit.SECONDS)
         .build()
     return try {
         val requestBody = JSONObject().put("content", question).toString().toRequestBody("application/json; charset=utf-8".toMediaType())

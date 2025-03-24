@@ -87,28 +87,54 @@ class DocumentAgent:
         # Add nodes to the graph with corresponding callback functions.
         self.graph.add_node("capture_input", self.input_node)
         self.graph.add_node("retrieval", self.retrieval_node)
+        self.graph.add_node("summarization", self.summarization_node)
+        # Add a new decision node for summarization.
+        self.graph.add_node("summarization_decision", lambda state: {"next": summarization_decision(state)})
         self.graph.add_node("uncertainty_check", self.uncertainty_check_node)
         self.graph.add_node("uncertainty_response", self.uncertainty_response_node)
         self.graph.add_node("generation", self.generation_node)
-        self.graph.add_node("summarization", self.summarization_node)
-    
-        # Define a linear flow from the start node to the retrieval node.
+
+        # Define linear flow from the start to input, retrieval, then decision.
         self.graph.add_edge(START, "capture_input")
         self.graph.add_edge("capture_input", "retrieval")
-        self.graph.add_edge("retrieval", "summarization")
+        self.graph.add_edge("retrieval", "summarization_decision")
+
+        # Define the decision function.
+        def summarization_decision(state):
+            # Look for the retrieval ToolMessage.
+            retrieval_msg = next(
+                (msg for msg in state["messages"] 
+                if isinstance(msg, ToolMessage) and msg.name == "document_retriever"),
+                None
+            )
+            # If retrieval message exists and is longer than a threshold, perform summarization.
+            if retrieval_msg and len(retrieval_msg.content) > 100:  # Adjust threshold as needed.
+                return "summarization"
+            else:
+                return "uncertainty_check"
+
+        # Conditional branching from the decision node.
+        self.graph.add_conditional_edges(
+            "summarization_decision",
+            lambda state: state.get("next"),
+            {"summarization": "summarization", "uncertainty_check": "uncertainty_check"}
+        )
+
+        # If summarization is executed, then proceed to uncertainty check.
         self.graph.add_edge("summarization", "uncertainty_check")
-    
-        # Define conditional branching based on uncertainty.
+
+        # Define conditional branching at the uncertainty check.
         def condition_func(state):
             # Branch to uncertainty_response if uncertain; otherwise, proceed to generation.
             return "uncertainty_response" if state.get("uncertainty") else "generation"
-    
+
         self.graph.add_conditional_edges(
             "uncertainty_check",
             condition_func,
             {"uncertainty_response": "uncertainty_response", "generation": "generation"}
         )
-        # Both branches eventually lead to the end of the conversation.
+
+        # Both uncertainty_response and generation eventually lead to the END node.
         self.graph.add_edge("uncertainty_response", END)
         self.graph.add_edge("generation", END)
     

@@ -44,7 +44,6 @@ import os
 # Import necessary classes and instances from the backend.
 from my_furhat_backend.models.llm_factory import HuggingFaceLLM
 from my_furhat_backend.models.classifier import TextClassifier
-from my_furhat_backend.agents.document_agent import rag_instance, chatbot
 
 # Instantiate a summarizer using a pre-trained model for text summarization.
 summarizer = HuggingFaceLLM(model_id="sshleifer/distilbart-cnn-12-6", task="summarization")
@@ -254,6 +253,7 @@ def summarize_text(text: str) -> str:
 
 
 def get_document_context(document: str) -> str:
+    from my_furhat_backend.agents.document_agent import rag_instance
     """
     Retrieve the context of a document from the DocumentAgent.
 
@@ -268,14 +268,16 @@ def get_document_context(document: str) -> str:
     """
     # Construct a prompt that asks for the document's overarching context and main themes.
     prompt = (
-        "Extract the overarching context and main themes from the document titled: "
-        f"'{document}'. Focus on summarizing the key topics and narrative without extraneous details."
+        "Extract the overarching context and main themes from the document titled "
+        f"'{document}'. Focus on summarizing the key topics, narrative, and any major findings "
+        "without including extraneous details."
     )
     # Retrieve and return the document context using the retrieval instance.
     return rag_instance.retrieve_similar(prompt)
 
 
 def generate_followup_prompt(summary: str) -> str:
+    from my_furhat_backend.agents.document_agent import chatbot
     """
     Generate a follow-up prompt for the assistant based on the provided summary.
 

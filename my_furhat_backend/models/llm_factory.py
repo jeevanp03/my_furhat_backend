@@ -129,7 +129,7 @@ class LlamaCcpLLM(BaseLLM):
         """
         # Set default parameters for Llama Cpp if not provided
         kwargs.setdefault("n_ctx", 10000)
-        kwargs.setdefault("n_gpu_layers", 24)
+        kwargs.setdefault("n_gpu_layers", 14)
         kwargs.setdefault("temperature", 0.1)
         kwargs.setdefault("n_batch", 300)
         kwargs.setdefault("max_tokens", 512)
