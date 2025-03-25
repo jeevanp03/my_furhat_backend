@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
 import multiprocessing
-from my_furhat_backend.models.model_pipeline import ModelPipelineManager
 from langchain_huggingface import HuggingFacePipeline, ChatHuggingFace, HuggingFaceEndpoint
 from langchain_community.chat_models import ChatLlamaCpp
 from my_furhat_backend.config.settings import config
 from my_furhat_backend.llm_tools.tools import tools as all_tools
 from langchain_core.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+import os
+import requests
+from transformers import pipeline
 
 # Abstract base class for all LLM implementations.
 class BaseLLM(ABC):
@@ -36,84 +38,135 @@ class BaseLLM(ABC):
 
 # Concrete implementation of BaseLLM using HuggingFace models.
 class HuggingFaceLLM(BaseLLM):
-    def __init__(self, model_id: str = "HuggingFaceTB/SmolLM2-1.7B-Instruct", task="text-generation", **kwargs):
+    """
+    A class to interact with Hugging Face's API for language model inference.
+    """
+    def __init__(self, model_id: str, task: str = "text-generation", **kwargs):
         """
-        Initialize the HuggingFaceLLM with a specified model and generation parameters.
-        
+        Initialize the HuggingFaceLLM.
+
         Parameters:
-            model_id (str): The Hugging Face model identifier (default: "HuggingFaceTB/SmolLM2-1.7B-Instruct").
-            **kwargs: Additional generation parameters for the model.
-                     Defaults set include max_new_tokens, top_k, temperature, and repetition_penalty.
+            model_id (str): The ID of the model to use.
+            task (str): The task type (default: "text-generation").
+            **kwargs: Additional parameters for the model.
         """
+        self.model_id = model_id
+        self.task = task
+        self.kwargs = kwargs
+        
         # Set default generation parameters if not provided
-        kwargs.setdefault("max_new_tokens", 512)
-        kwargs.setdefault("top_k", 50)
-        kwargs.setdefault("temperature", 0.1)
-        kwargs.setdefault("repetition_penalty", 1.03)
-        # Create a chat interface using the HuggingFaceEndpoint
-        self.chat_llm = ChatHuggingFace(llm=self.__create_endpoint(model_id, task, **kwargs))
-        # Uncomment the line below to pre-bind external tools if needed:
-        # self.chat_llm_with_tools = self.chat_llm.bind_tools(all_tools)
-
-    def __create_chat_pipeline(self, pipeline_instance):
-        """
-        Create a ChatHuggingFace pipeline from an existing pipeline instance.
+        self.kwargs.setdefault("max_new_tokens", 512)
+        self.kwargs.setdefault("temperature", 0.7)
+        self.kwargs.setdefault("top_p", 0.9)
+        self.kwargs.setdefault("do_sample", True)  # Enable sampling for temperature and top_p
+        self.kwargs.setdefault("max_length", 1024)  # Set maximum sequence length
         
-        Parameters:
-            pipeline_instance: An instance of a HuggingFace pipeline.
-            
-        Returns:
-            ChatHuggingFace: A chat interface built on top of the given pipeline.
-        """
-        return ChatHuggingFace(llm=HuggingFacePipeline(pipeline=pipeline_instance))
+        # Initialize the API URL and headers
+        self.api_url = f"https://api-inference.huggingface.co/models/{model_id}"
+        self.headers = {"Authorization": f"Bearer {os.getenv('HUGGINGFACE_API_KEY')}"}
+        
+        # Create the appropriate pipeline based on task
+        self.llm = self.__create_pipeline()
     
-    def __create_endpoint(self, model_id: str, task: str, **kwargs):
+    def __create_pipeline(self):
         """
-        Create a HuggingFaceEndpoint for text-generation with the provided model.
+        Create the appropriate pipeline based on the task type.
+        """
+        try:
+            if self.task == "text-generation":
+                return pipeline(
+                    "text-generation",
+                    model=self.model_id,
+                    tokenizer=self.model_id,
+                    device=-1,
+                    **self.kwargs
+                )
+            elif self.task == "summarization":
+                return pipeline(
+                    "summarization",
+                    model=self.model_id,
+                    tokenizer=self.model_id,
+                    device=-1,
+                    **self.kwargs
+                )
+            else:
+                raise ValueError(f"Unsupported task type: {self.task}")
+        except Exception as e:
+            print(f"Error creating pipeline: {e}")
+            return None
+    
+    def __truncate_input(self, prompt: str) -> str:
+        """
+        Truncate the input prompt if it exceeds the maximum token length.
         
         Parameters:
-            model_id (str): The model identifier to load.
-            **kwargs: Additional parameters for the endpoint, including generation settings.
+            prompt (str): The input prompt.
             
         Returns:
-            HuggingFaceEndpoint: An endpoint configured for text-generation tasks.
+            str: The truncated prompt.
         """
-        return HuggingFaceEndpoint(
-            repo_id=model_id,
-            task=task,
-            huggingfacehub_api_token=config["HF_KEY"],
-            # Uncomment the line below to enable streaming output callbacks:
-            # callbacks=[StreamingStdOutCallbackHandler()],
-            **kwargs
-        )
+        try:
+            # Get the tokenizer from the pipeline
+            tokenizer = self.llm.tokenizer if self.llm else None
+            if not tokenizer:
+                return prompt
+                
+            # Tokenize the input
+            tokens = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=self.kwargs["max_length"])
+            
+            # Decode back to text
+            return tokenizer.decode(tokens["input_ids"][0])
+        except Exception as e:
+            print(f"Error truncating input: {e}")
+            return prompt
+    
+    def query(self, prompt: str) -> str:
+        """
+        Query the model with the given prompt.
 
-    def query(self, text: str, tool: bool = False):
-        """
-        Process the query using the HuggingFace model.
-        
         Parameters:
-            text (str): The input query or prompt.
-            tool (bool): If True, use the version of the model with pre-bound tools.
-            
+            prompt (str): The input prompt.
+
         Returns:
-            The generated response as output from the chat model.
+            str: The model's response.
         """
-        if tool:
-            # If tools are enabled, use the tool-bound version (if pre-bound)
-            return self.chat_llm_with_tools.invoke(text)
-        else:
-            # Otherwise, use the basic chat interface
-            return self.chat_llm.invoke(text)
+        try:
+            # Truncate the input if needed
+            truncated_prompt = self.__truncate_input(prompt)
+            
+            if self.llm:
+                # Use local pipeline
+                result = self.llm(truncated_prompt, **self.kwargs)
+                if isinstance(result, list) and len(result) > 0:
+                    if isinstance(result[0], dict):
+                        return result[0].get("generated_text", "")
+                    return result[0]
+                return str(result)
+            else:
+                # Fallback to API
+                response = requests.post(
+                    self.api_url,
+                    headers=self.headers,
+                    json={"inputs": truncated_prompt, **self.kwargs}
+                )
+                response.raise_for_status()
+                result = response.json()
+                
+                if isinstance(result, list) and len(result) > 0:
+                    if isinstance(result[0], dict):
+                        return result[0].get("generated_text", "")
+                    return result[0]
+                return str(result)
+        except Exception as e:
+            print(f"Error in query: {e}")
+            return ""
 
     def bind_tools(self, tools: list, tool_schema: dict | str = None):
         """
-        Bind external tools to the HuggingFaceLLM.
-        
-        Parameters:
-            tools (list): A list of tools to be bound.
-            tool_schema (dict or str, optional): The schema or configuration for these tools.
+        Bind tools to the LLM for enhanced functionality.
         """
-        self.chat_llm.bind_tools(tools)
+        # Implementation for tool binding if needed
+        pass
 
 # Concrete implementation of BaseLLM using Llama Cpp.
 class LlamaCcpLLM(BaseLLM):

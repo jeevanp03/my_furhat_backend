@@ -46,7 +46,17 @@ from my_furhat_backend.models.llm_factory import HuggingFaceLLM
 from my_furhat_backend.models.classifier import TextClassifier
 
 # Instantiate a summarizer using a pre-trained model for text summarization.
-summarizer = HuggingFaceLLM(model_id="sshleifer/distilbart-cnn-12-6", task="summarization")
+summarizer = HuggingFaceLLM(
+    model_id="sshleifer/distilbart-cnn-12-6",
+    task="summarization",
+    max_length=1024,
+    max_new_tokens=100,
+    temperature=0.7,
+    top_p=0.9,
+    do_sample=True,
+    min_length=30,
+    no_repeat_ngram_size=3
+)
 text_classifier = TextClassifier()
 
 
@@ -233,23 +243,34 @@ def get_list_docs(folder_path: str = "my_furhat_backend/ingestion") -> list:
 
 def summarize_text(text: str) -> str:
     """
-    Summarize the input text using a pre-trained summarization model.
-
-    This function creates a prompt by appending a summarization instruction to the input text
-    and then queries the summarizer model to generate a concise summary.
+    Summarize the given text using the LLM.
 
     Parameters:
-        text (str): The input text to be summarized.
+        text (str): The text to summarize.
 
     Returns:
-        str: The summarized version of the input text.
+        str: The summarized text.
     """
-    # Build a prompt by combining an instruction with the provided text.
-    prompt = (
-        "Summarize the retrieved document context to provide a concise response: " + text
-    )
-    # Query the summarizer model and return its output.
-    return summarizer.query(prompt)
+    # Create a prompt for summarization
+    prompt = f"""Please provide a concise, natural summary of the following text. Focus on the main points and key information, but present it in a conversational way:
+
+{text}
+
+Summary:"""
+
+    # Use the same LLM with the summarization prompt
+    response = summarizer.query(prompt)
+    
+    # Handle different response formats
+    if isinstance(response, str):
+        return response.strip()
+    elif isinstance(response, dict):
+        return response.get("summary_text", "").strip()
+    elif isinstance(response, list) and len(response) > 0:
+        if isinstance(response[0], dict):
+            return response[0].get("summary_text", "").strip()
+        return str(response[0]).strip()
+    return ""
 
 
 def get_document_context(document: str) -> str:
@@ -277,7 +298,7 @@ def get_document_context(document: str) -> str:
 
 
 def generate_followup_prompt(summary: str) -> str:
-    from my_furhat_backend.agents.document_agent import chatbot
+    from my_furhat_backend.agents.document_agent import llm
     """
     Generate a follow-up prompt for the assistant based on the provided summary.
 
@@ -297,7 +318,7 @@ def generate_followup_prompt(summary: str) -> str:
         "and relevance to the user's query. The summary is as follows: " + summary
     )
     # Query the chatbot instance with the generated prompt and return the result.
-    return chatbot.query(prompt)
+    return llm.query(prompt)
 
 
 def classify_text(content: str, docs: list) -> dict:
