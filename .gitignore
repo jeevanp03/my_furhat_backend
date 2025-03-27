@@ -13,3 +13,4 @@ my_furhat_backend/ingestion
 my_furhat_backend/db
 Furhat_W25.pem
 furhat_skills/Conversation/src/main/kotlin/furhatos/app/templateadvancedskill/parms.kt
+question_cache.json
