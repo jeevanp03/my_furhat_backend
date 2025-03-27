@@ -83,7 +83,7 @@ class RAG:
             logger.error("No documents loaded; cannot perform chunking.")
             return []
         # Split documents into chunks with specified size and overlap for better context
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=50)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         chunks = text_splitter.split_documents(docs)
         logger.info(f"Split documents into {len(chunks)} chunk(s).")
         return chunks
@@ -161,6 +161,28 @@ class RAG:
             return self.__rerank(query_text, top_n=top_n, search_kwargs=search_kwargs)
         # If no reranking is needed, perform a direct similarity search on the vector store
         return self.vector_store.similarity_search(query_text)
+    
+    def get_document_context(self, document: str) -> str:
+        """
+        Retrieve the context of a document from the DocumentAgent.
+
+        Generates a prompt instructing the retrieval system to extract the main context and themes from the document.
+        The function then queries the retrieval system (rag_instance) to obtain the document context.
+
+        Parameters:
+            document (str): The name or identifier of the document to retrieve context for.
+
+        Returns:
+            str: The context of the specified document.
+        """
+        # Construct a prompt that asks for the document's overarching context and main themes.
+        prompt = (
+            "Extract the overarching context and main themes from the document titled "
+            f"'{document}'. Focus on summarizing the key topics, narrative, and any major findings "
+            "without including extraneous details."
+        )
+        # Retrieve and return the document context using the retrieval instance.
+        return self.retrieve_similar(prompt)
     
     def __rerank(self, prompt, top_n=5, search_kwargs=20):
         """

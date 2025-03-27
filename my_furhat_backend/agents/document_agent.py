@@ -21,8 +21,10 @@ import json
 from pathlib import Path
 from sentence_transformers import SentenceTransformer
 import numpy as np
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 from datetime import datetime
+from transformers import pipeline
+import re
 
 # Import custom LLM/chatbot classes.
 from my_furhat_backend.models.chatbot_factory import create_chatbot
@@ -30,19 +32,7 @@ from my_furhat_backend.utils.util import clean_output, summarize_text
 # Import the RAG (Retrieval-Augmented Generation) class.
 from my_furhat_backend.RAG.rag_flow import RAG
 
-# Create a global instance of RAG with document ingestion parameters.
-rag_instance = RAG(
-    hf=True,
-    persist_directory="my_furhat_backend/db",
-    path_to_document="my_furhat_backend/ingestion/CMRPublished.pdf"
-)
-
-# Initialize the chatbot using a Llama model.
-# Alternative: you can specify a custom model id by uncommenting and modifying the line below.
-# chatbot = create_chatbot("llama", model_id="my_furhat_backend/ggufs_models/SmolLM2-1.7B-Instruct-Q4_K_M.gguf")
-chatbot = create_chatbot("llama")
-llm = chatbot.llm
-
+context = None
 # Define the conversation state type using TypedDict.
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], "add_messages"]
@@ -180,7 +170,7 @@ class DocumentAgent:
       
     The agent uses persistent memory to checkpoint the conversation state and resume processing as needed.
     """
-    def __init__(self):
+    def __init__(self, model_id: str = "mistralai/Mistral-7B-Instruct-v0.2"):
         """
         Initialize the DocumentAgent.
 
@@ -188,14 +178,57 @@ class DocumentAgent:
         """
         # Initialize MemorySaver to checkpoint the state graph.
         self.memory = MemorySaver()
+        
+        # Initialize RAG with caching
+        self.rag_instance = RAG(
+            hf=True,
+            persist_directory="my_furhat_backend/db",
+            path_to_document="my_furhat_backend/ingestion/NorwAi annual report 2023.pdf"
+        )
+        
+        # Initialize chatbot with optimized settings
+        self.chatbot = create_chatbot(
+            "llama",
+            model_id=model_id,
+            n_ctx=4096,  # Reduced context window
+            n_batch=512,  # Increased batch size
+            n_threads=4,  # Optimize thread count
+            n_gpu_layers=32  # Use more GPU layers
+        )
+        self.llm = self.chatbot.llm
+        
         # Create a state graph using the custom State schema.
         self.graph = StateGraph(State)
-        # Initialize the question cache
+        
+        # Initialize caches with larger sizes
         self.question_cache = QuestionCache()
+        self.context_cache = {}
+        self.summary_cache = {}  # New cache for document summaries
+        
         # Build the conversation flow by adding nodes and edges.
         self._build_graph()
+        
         # Compile the graph with checkpointing support.
         self.compiled_graph = self.graph.compile(checkpointer=self.memory)
+        
+        # Initialize conversation memory with a larger size
+        self.conversation_memory = []
+        self.max_memory_size = 10  # Increased from 5
+        
+        # Initialize sentiment analyzer with specific model and caching
+        self.sentiment_analyzer = pipeline(
+            "sentiment-analysis",
+            model="distilbert-base-uncased-finetuned-sst-2-english",
+            device="mps",
+            model_kwargs={"cache_dir": "my_furhat_backend/cache"}  # Enable model caching
+        )
+        
+        # Initialize personality traits
+        self.personality_traits = {
+            "curiosity": 0.8,
+            "empathy": 0.7,
+            "enthusiasm": 0.6
+        }
     
     def _build_graph(self):
         """
@@ -208,8 +241,8 @@ class DocumentAgent:
           - Summarization.
           - Uncertainty response.
           - Answer generation.
-          - Answer refinement.
           - Response formatting.
+          - Follow-up question handling.
 
         It also sets up edges for linear progression and conditional branching based on LLM decisions.
         """
@@ -220,12 +253,23 @@ class DocumentAgent:
         self.graph.add_node("summarization", self.summarization_node)
         self.graph.add_node("uncertainty_response", self.uncertainty_response_node)
         self.graph.add_node("generation", self.generation_node)
-        self.graph.add_node("answer_refinement", self.answer_refinement_node)
         self.graph.add_node("format_response", self.format_response_node)
+        self.graph.add_node("answer_followup", self.answer_followup_node)
 
-        # Define linear flow from the start to input, retrieval, then analysis.
+        # Define linear flow from the start to input
         self.graph.add_edge(START, "capture_input")
-        self.graph.add_edge("capture_input", "retrieval")
+
+        # Add conditional edge from input to either retrieval or answer_followup
+        self.graph.add_conditional_edges(
+            "capture_input",
+            lambda state: self._determine_next_node(state),
+            {
+                "retrieval": "retrieval",
+                "answer_followup": "answer_followup"
+            }
+        )
+
+        # Define linear flow from retrieval to analysis
         self.graph.add_edge("retrieval", "content_analysis")
 
         # Define conditional branching from the content analysis node
@@ -242,15 +286,13 @@ class DocumentAgent:
         # If summarization is executed, then proceed to generation
         self.graph.add_edge("summarization", "generation")
 
-        # After generation, proceed to answer refinement
-        self.graph.add_edge("generation", "answer_refinement")
-
-        # After refinement, proceed to response formatting
-        self.graph.add_edge("answer_refinement", "format_response")
+        # After generation, proceed directly to response formatting
+        self.graph.add_edge("generation", "format_response")
 
         # Both uncertainty_response and format_response lead to the END node
         self.graph.add_edge("uncertainty_response", END)
         self.graph.add_edge("format_response", END)
+        self.graph.add_edge("answer_followup", END)
     
     def input_node(self, state: State) -> dict:
         """
@@ -283,7 +325,7 @@ class DocumentAgent:
         # Use the user's input as the query for retrieval.
         query = state.get("input", "")
         # Retrieve similar documents with reranking enabled.
-        retrieved_docs = rag_instance.retrieve_similar(query, rerank=True)
+        retrieved_docs = self.rag_instance.retrieve_similar(query, rerank=True)
         # Concatenate the content of retrieved documents or provide a default message if none are found.
         if retrieved_docs:
             retrieved_text = "\n".join(doc.page_content for doc in retrieved_docs)
@@ -302,6 +344,7 @@ class DocumentAgent:
     def summarization_node(self, state: State) -> dict:
         """
         Summarize the retrieved document context using a pre-trained summarization model.
+        Implements caching to avoid re-summarizing the same content.
 
         Parameters:
             state (State): The current conversation state.
@@ -319,8 +362,25 @@ class DocumentAgent:
         if retrieval_msg:
             # Remove any header text from the retrieval message.
             text_to_summarize = retrieval_msg.content.replace("Retrieved context:\n", "")
-            # Generate a summary of the retrieved content.
-            summarized_text = summarize_text(text_to_summarize)
+            
+            # Check if we have a cached summary for this content
+            content_hash = hash(text_to_summarize)
+            if content_hash in self.summary_cache:
+                summarized_text = self.summary_cache[content_hash]
+            else:
+                # Generate a summary of the retrieved content with appropriate parameters
+                summarized_text = summarize_text(
+                    text_to_summarize,
+                    max_length=400,
+                    min_length=50
+                )
+                # Cache the summary
+                self.summary_cache[content_hash] = summarized_text
+                
+                # Limit cache size to prevent memory issues
+                if len(self.summary_cache) > 1000:
+                    # Remove oldest entry
+                    self.summary_cache.pop(next(iter(self.summary_cache)))
         else:
             summarized_text = "No document context available to summarize."
         
@@ -340,8 +400,7 @@ class DocumentAgent:
         Analyzes content for:
         1. Need for summarization
         2. Uncertainty in the information
-        3. Need for refinement
-        4. Overall quality and completeness
+        3. Overall quality and completeness
 
         Parameters:
             state (State): The current conversation state.
@@ -388,13 +447,7 @@ Analyze the following aspects:
    - Is the information relevant to the query?
    - Is there unnecessary detail that could be condensed?
 
-3. Need for Refinement
-   - Would follow-up questions help get more specific information?
-   - Are there multiple aspects that could be clarified?
-   - Is the information too broad or general?
-   - Could the information be presented more clearly?
-
-4. Summarization Benefits
+3. Summarization Benefits
    - Would summarizing help focus on key points?
    - Is there extraneous information that could be removed?
    - Would a shorter version be more effective?
@@ -402,12 +455,11 @@ Analyze the following aspects:
 
 Respond in the following format:
 UNCERTAINTY_PRESENT: [yes/no]
-REFINEMENT_NEEDED: [yes/no]
 NEXT_STEP: [summarization/uncertainty_response/generation]
 REASONING: [brief explanation of the decision, including specific reasons for or against summarization]"""
 
         # Get the LLM's analysis
-        response = llm.query(prompt)
+        response = self.llm.query(prompt)
         
         # Parse the response
         analysis = {}
@@ -432,7 +484,6 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         state.update({
             "needs_summary": needs_summary,
             "uncertainty": analysis.get("uncertainty_present", "no") == "yes",
-            "needs_refinement": analysis.get("refinement_needed", "no") == "yes",
             "next": next_step
         })
         
@@ -467,72 +518,8 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         Returns:
             dict: The state updated with the AI-generated answer.
         """
-        # Delegate response generation to the chatbot's conversation method.
-        return chatbot.chatbot(state)
-    
-    def answer_refinement_node(self, state: State) -> dict:
-        """
-        Generate follow-up questions to help the user get more specific information.
-
-        Parameters:
-            state (State): The current conversation state.
-
-        Returns:
-            dict: Updated state with refined answer and follow-up questions.
-        """
-        # Get the last AI message (the generated answer)
-        last_ai_msg = next(
-            (msg for msg in reversed(state["messages"])
-            if isinstance(msg, AIMessage)),
-            None
-        )
-        
-        if not last_ai_msg:
-            return state
-
-        # Create a prompt for the LLM to generate follow-up questions
-        prompt = f"""Generate 2-3 specific follow-up questions that would help the user get more precise information
-about the following answer:
-
-Answer:
-{last_ai_msg.content}
-
-Consider:
-1. What aspects of the answer could be clarified?
-2. What additional information would be helpful?
-3. What specific details might the user want to know more about?
-
-Respond with just the follow-up questions, one per line. Do not include any numbering or formatting."""
-
-        # Get the LLM's follow-up questions
-        response = llm.query(prompt)
-        follow_up_questions = [q.strip() for q in response.content.split("\n") if q.strip()]
-        
-        # Clean up the original answer content
-        original_content = last_ai_msg.content
-        
-        # If the content is a JSON string, try to format it nicely
-        if original_content.startswith('{') and original_content.endswith('}'):
-            try:
-                import json
-                json_data = json.loads(original_content)
-                formatted_json = json.dumps(json_data, indent=2)
-                original_content = formatted_json
-            except json.JSONDecodeError:
-                pass  # If JSON parsing fails, use the original content
-        
-        # Create a new message with the refined answer and follow-up questions
-        if follow_up_questions:
-            refined_content = f"{original_content}\n\nTo help you get more specific information, here are some follow-up questions:\n"
-            for i, question in enumerate(follow_up_questions, 1):
-                # Remove any existing numbering from the question
-                question = question.lstrip('0123456789. ')
-                refined_content += f"{i}. {question}\n"
-            
-            # Replace the last AI message with the refined version
-            state["messages"][-1] = AIMessage(content=refined_content)
-        
-        return state
+        # Delegate response generation to the chatbot's conversation method
+        return self.chatbot.chatbot(state)
     
     def format_response_node(self, state: State) -> dict:
         """
@@ -567,16 +554,15 @@ Guidelines:
 1. Use natural, conversational language
 2. Remove any JSON structures or technical formatting
 3. Keep the information organized but in a flowing narrative
-4. Maintain the follow-up questions but integrate them naturally
-5. Use contractions and casual language where appropriate
-6. Add conversational transitions between topics
-7. Avoid meta-commentary about being human or conversational
-8. Keep responses concise and focused
+4. Use contractions and casual language where appropriate
+5. Add conversational transitions between topics
+6. Avoid meta-commentary about being human or conversational
+7. Keep responses concise and focused
 
 Respond with just the reformatted text."""
 
         # Get the LLM's formatted response
-        response = llm.query(prompt)
+        response = self.llm.query(prompt)
         formatted_content = response.content.strip()
         
         # Replace the last AI message with the formatted version
@@ -584,6 +570,70 @@ Respond with just the reformatted text."""
         
         return state
     
+    def _analyze_sentiment(self, text: str) -> float:
+        """Analyze the sentiment of the text and return a score between -1 and 1."""
+        result = self.sentiment_analyzer(text)[0]
+        return 1.0 if result['label'] == 'POSITIVE' else -1.0
+        
+    def _adjust_tone(self, text: str, sentiment: float) -> str:
+        """Adjust the tone of the response based on sentiment and personality."""
+        # Add personality-based modifiers
+        if self.personality_traits["enthusiasm"] > 0.5:
+            text = text.replace(".", "!")
+            
+        # Adjust based on sentiment
+        if sentiment < -0.5:
+            text = f"I understand this might be concerning. {text}"
+        elif sentiment > 0.5:
+            text = f"That's great to hear! {text}"
+            
+        return text
+        
+    def _generate_engaging_prompt(self, document_name: str, answer: str) -> str:
+        """Generate an engaging follow-up prompt based on conversation history and personality."""
+        # Use personality traits to influence prompt generation
+        curiosity_level = self.personality_traits["curiosity"]
+        empathy_level = self.personality_traits["empathy"]
+        
+        # Generate different types of prompts based on personality
+        if curiosity_level > 0.7:
+            return f"I'm really curious about this! What would you like to explore next about {document_name}?"
+        elif empathy_level > 0.7:
+            return f"I find this topic fascinating. What aspects of {document_name} would you like to discuss further?"
+        else:
+            return f"Would you like to know more about {document_name}?"
+            
+    def _update_conversation_memory(self, question: str, answer: str):
+        """Update the conversation memory with new Q&A pair."""
+        # Add new exchange
+        self.conversation_memory.append({
+            "question": question,
+            "answer": answer,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # Keep only last N exchanges for context
+        if len(self.conversation_memory) > self.max_memory_size:
+            # Remove oldest entries
+            self.conversation_memory = self.conversation_memory[-self.max_memory_size:]
+            
+        # Clean up old follow-up questions
+        self.conversation_memory = [
+            msg for msg in self.conversation_memory 
+            if not (msg.get("follow_up", False) and 
+                   (datetime.now() - datetime.fromisoformat(msg["timestamp"])).days > 1)
+        ]
+            
+    def _get_conversation_context(self) -> str:
+        """Get a summary of the conversation context."""
+        if not self.conversation_memory:
+            return ""
+            
+        context = "Previous conversation:\n"
+        for exchange in self.conversation_memory:
+            context += f"Q: {exchange['question']}\nA: {exchange['answer']}\n"
+        return context
+        
     def run(self, initial_input: str, system_prompt: str = None) -> str:
         """
         Execute the document agent's conversation flow.
@@ -595,6 +645,19 @@ Respond with just the reformatted text."""
         Returns:
             str: The cleaned output from the final AI-generated message.
         """
+        # Don't cache or process "I don't know" type responses
+        if any(phrase in initial_input.lower() for phrase in ["i don't know", "i do not know", "you tell me", "tell me"]):
+            # Get the last follow-up question from the conversation
+            last_follow_up = next(
+                (msg for msg in reversed(self.conversation_memory)
+                if "follow_up" in msg),
+                None
+            )
+            if last_follow_up:
+                # Answer the follow-up question instead of treating it as a new query
+                return self._answer_follow_up(last_follow_up["question"])
+            return "I apologize, but I don't have enough context to provide a meaningful answer."
+
         # Check cache for similar questions first
         similar_question = self.question_cache.find_similar_question(initial_input)
         if similar_question:
@@ -635,10 +698,291 @@ Respond with just the reformatted text."""
         if final_ai_msg:
             # Cache the question and answer
             self.question_cache.add_question(initial_input, final_ai_msg.content)
+            # Store in conversation memory with document name
+            self.conversation_memory.append({
+                "question": initial_input,
+                "answer": final_ai_msg.content,
+                "document_name": "CMRPublished",  # Default document name
+                "timestamp": datetime.now().isoformat()
+            })
             return clean_output(final_ai_msg.content)
         
         return "No response generated."
 
+    def _answer_follow_up(self, follow_up_question: str) -> str:
+        """
+        Answer a follow-up question directly without treating it as a new query.
+        
+        Parameters:
+            follow_up_question (str): The follow-up question to answer.
+            
+        Returns:
+            str: The answer to the follow-up question.
+        """
+        # Get the previous answer from conversation memory
+        previous_exchange = next(
+            (msg for msg in reversed(self.conversation_memory)
+            if not msg.get("follow_up", False)),  # Get the last non-follow-up exchange
+            None
+        )
+        
+        if not previous_exchange:
+            return "I apologize, but I don't have enough context to provide a meaningful answer."
+            
+        previous_answer = previous_exchange.get("answer", "")
+        
+        # Truncate previous answer to prevent token overflow
+        max_answer_length = 200   # words
+        answer_words = previous_answer.split()
+        
+        if len(answer_words) > max_answer_length:
+            previous_answer = ' '.join(answer_words[:max_answer_length]) + '...'
+        
+        # Create a prompt to answer the follow-up question
+        prompt = f"""Answer the following follow-up question based on the previous answer.
+
+Previous Answer:
+{previous_answer}
+
+Follow-up Question:
+{follow_up_question}
+
+Guidelines:
+1. Provide a direct answer to the follow-up question
+2. Use the previous answer to support your response
+3. Keep the response concise and focused
+4. Use natural, conversational language
+5. If you can't answer based on the previous context, say so clearly
+6. Make sure your answer builds on the previous discussion
+7. Avoid repeating information from the previous answer unless relevant to the follow-up
+
+Generate a direct answer:"""
+
+        # Get the answer from the LLM
+        response = self.llm.query(prompt)
+        answer = response.content if isinstance(response, AIMessage) else str(response)
+        
+        return clean_output(answer)
+
+    def engage(self, document_name: str, answer: str) -> str:
+        """
+        Generate an engaging follow-up question based on the document context and previous answer.
+        
+        Parameters:
+            document_name (str): Name of the document being discussed.
+            answer (str): The previous answer to generate a follow-up for.
+            
+        Returns:
+            str: A conversational follow-up question.
+        """
+        # Get document context from cache or retrieve it
+        if document_name not in self.context_cache:
+            self.context_cache[document_name] = self.rag_instance.get_document_context(document_name)
+        
+        # Extract text content from document list
+        context_docs = self.context_cache[document_name]
+        context = "\n".join(doc.page_content for doc in context_docs)
+        
+        # Truncate context and answer to prevent token overflow
+        max_context_length = 300  # Increased from 200 to 300
+        max_answer_length = 400   # Increased from 300 to 400
+
+        summarized_context = summarize_text(context, max_length=400, min_length=150)  # Increased limits
+        summarized_answer = summarize_text(answer, max_length=400, min_length=150)    # Increased limits
+        
+        context_words = summarized_context.split()
+        answer_words = summarized_answer.split()
+        
+        if len(context_words) > max_context_length:
+            context = ' '.join(context_words[:max_context_length]) + '...'
+        if len(answer_words) > max_answer_length:
+            answer = ' '.join(answer_words[:max_answer_length]) + '...'
+        
+        # Create a prompt for the LLM to generate a natural follow-up
+        prompt = f"""Based on the previous answer, generate a single, natural follow-up question.
+The question should be directly related to what was just discussed.
+
+Previous Answer:
+{answer}
+
+Guidelines:
+1. Make it sound like a natural question someone would ask in conversation
+2. Use casual, everyday language
+3. Keep it short and simple
+4. Focus on an interesting aspect from the previous answer
+5. Avoid formal or academic language
+6. Don't use phrases like "as discussed" or "within this context"
+7. Don't ask about the user's experience or opinions
+8. Don't use complex terminology unless it's essential to the topic
+9. Make sure the question is directly related to the previous answer
+10. Don't introduce completely new topics
+
+Generate a single, natural follow-up question:"""
+        
+        # Get the follow-up question from the LLM
+        response = self.llm.query(prompt)
+        follow_up = response.content if isinstance(response, AIMessage) else str(response)
+        
+        # Clean up the response to make it more conversational
+        follow_up = re.sub(r'\d+\)\s*', '', follow_up)  # Remove numbered questions
+        follow_up = re.sub(r'Could you elaborate on|What specific|How does|In what ways', '', follow_up)
+        follow_up = re.sub(r'feel free to ask me follow up questions like:', '', follow_up)
+        follow_up = re.sub(r'questions like:', '', follow_up)
+        follow_up = re.sub(r'questions such as:', '', follow_up)
+        follow_up = re.sub(r'like:', '', follow_up)
+        follow_up = re.sub(r'such as:', '', follow_up)
+        follow_up = re.sub(r'for example:', '', follow_up)
+        follow_up = re.sub(r'including:', '', follow_up)
+        follow_up = re.sub(r'like', '', follow_up)
+        follow_up = re.sub(r'such as', '', follow_up)
+        follow_up = re.sub(r'for example', '', follow_up)
+        follow_up = re.sub(r'including', '', follow_up)
+        follow_up = re.sub(r'etc\.', '', follow_up)
+        follow_up = re.sub(r'etc', '', follow_up)
+        follow_up = re.sub(r'\.\.\.', '', follow_up)
+        follow_up = re.sub(r'\.\.', '', follow_up)
+        follow_up = re.sub(r'\.', '', follow_up)
+        follow_up = re.sub(r'\?', '', follow_up)
+        follow_up = re.sub(r'\s+', ' ', follow_up).strip()
+        
+        # Add a conversational prefix
+        follow_up = f"I'm curious, {follow_up}?"
+        
+        # Store the follow-up question in conversation memory
+        self.conversation_memory.append({
+            "question": follow_up,
+            "follow_up": True,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        return follow_up
+
+    def answer_followup_node(self, state: State) -> dict:
+        """
+        Handle follow-up questions by answering based on previous conversation context.
+
+        Parameters:
+            state (State): The current conversation state.
+
+        Returns:
+            dict: Updated state with the follow-up answer.
+        """
+        # Get the last follow-up question from the conversation
+        last_follow_up = next(
+            (msg for msg in reversed(self.conversation_memory)
+            if "follow_up" in msg),
+            None
+        )
+        
+        if not last_follow_up:
+            state["messages"].append(AIMessage(
+                content="I apologize, but I don't have enough context to provide a meaningful answer."
+            ))
+            return {"messages": state["messages"]}
+            
+        # Get the previous answer from conversation memory
+        previous_exchange = next(
+            (msg for msg in reversed(self.conversation_memory)
+            if not msg.get("follow_up", False)),  # Get the last non-follow-up exchange
+            None
+        )
+        
+        if not previous_exchange:
+            state["messages"].append(AIMessage(
+                content="I apologize, but I don't have enough context to provide a meaningful answer."
+            ))
+            return {"messages": state["messages"]}
+            
+        previous_answer = previous_exchange.get("answer", "")
+        
+        # Truncate previous answer to prevent token overflow
+        max_answer_length = 200   # words
+        answer_words = previous_answer.split()
+        
+        if len(answer_words) > max_answer_length:
+            previous_answer = ' '.join(answer_words[:max_answer_length]) + '...'
+        
+        # Create a prompt to answer the follow-up question
+        prompt = f"""Answer the following follow-up question based on the previous answer.
+
+Previous Answer:
+{previous_answer}
+
+Follow-up Question:
+{last_follow_up["question"]}
+
+Guidelines:
+1. Provide a direct answer to the follow-up question
+2. Use the previous answer to support your response
+3. Keep the response concise and focused
+4. Use natural, conversational language
+5. If you can't answer based on the previous context, say so clearly
+6. Make sure your answer builds on the previous discussion
+7. Avoid repeating information from the previous answer unless relevant to the follow-up
+
+Generate a direct answer:"""
+
+        # Get the answer from the LLM
+        response = self.llm.query(prompt)
+        answer = response.content if isinstance(response, AIMessage) else str(response)
+        
+        # Add the answer to the state messages
+        state["messages"].append(AIMessage(content=clean_output(answer)))
+        
+        return {"messages": state["messages"]}
+
+    def _determine_next_node(self, state: State) -> str:
+        """
+        Determine whether to route to retrieval or answer_followup based on the input.
+        Uses LLM to make a more nuanced decision about whether the input is a follow-up question.
+
+        Parameters:
+            state (State): The current conversation state.
+
+        Returns:
+            str: Either "retrieval" or "answer_followup" based on the analysis.
+        """
+        # Get the user's input
+        user_input = state.get("input", "").lower()
+        
+        # If there's no conversation history, it's not a follow-up
+        if not self.conversation_memory:
+            return "retrieval"
+            
+        # Get the last non-follow-up exchange for context
+        last_exchange = next(
+            (msg for msg in reversed(self.conversation_memory)
+            if not msg.get("follow_up", False)),
+            None
+        )
+        
+        if not last_exchange:
+            return "retrieval"
+            
+        # Create a prompt for the LLM to analyze if this is a follow-up question
+        prompt = f"""Analyze if the following user input is a follow-up question to the previous conversation.
+Consider the context and determine if the user is asking for clarification or additional information about the previous answer.
+
+Previous Answer:
+{last_exchange.get('answer', '')}
+
+Current User Input:
+{user_input}
+
+Guidelines for determining if it's a follow-up:
+1. Is the user asking for clarification about something mentioned in the previous answer?
+2. Is the user asking for more details about a specific point from the previous answer?
+3. Is the user using phrases like "I don't know", "you tell me", or "tell me"?
+4. Is the user asking about a specific aspect mentioned in the previous answer?
+5. Is the question directly related to the previous discussion?
+
+Respond with only one word: "followup" if it's a follow-up question, or "retrieval" if it's a new question."""
+
+        # Get the LLM's decision
+        response = self.llm.query(prompt)
+        decision = response.content.strip().lower()
+        
+        return "answer_followup" if decision == "followup" else "retrieval"
 
 if __name__ == "__main__":
     # Instantiate the DocumentAgent.
@@ -657,3 +1001,4 @@ if __name__ == "__main__":
         # Run the agent with the provided input.
         response = agent.run(user_input)
         print("Agent:", response)
+        print("Agent Follow-up:", agent.engage("CMRPublished", response))

@@ -24,7 +24,7 @@ Functions:
     get_list_docs(folder_path: str = "my_furhat_backend/ingestion") -> list
         Returns a list of file names (without extensions) found in the specified ingestion directory.
 
-    summarize_text(text: str) -> str
+    summarize_text(text: str, max_length: int = 150, min_length: int = 30) -> str
         Summarizes the input text using a pre-trained summarization model.
 
     get_document_context(document: str) -> str
@@ -241,84 +241,48 @@ def get_list_docs(folder_path: str = "my_furhat_backend/ingestion") -> list:
     ]
 
 
-def summarize_text(text: str) -> str:
+def summarize_text(text: str, max_length: int = 150, min_length: int = 30) -> str:
     """
     Summarize the given text using the LLM.
 
     Parameters:
         text (str): The text to summarize.
+        max_length (int): Maximum length of the summary in words. Defaults to 150.
+        min_length (int): Minimum length of the summary in words. Defaults to 30.
 
     Returns:
         str: The summarized text.
     """
-    # Create a prompt for summarization
-    prompt = f"""Please provide a concise, natural summary of the following text. Focus on the main points and key information, but present it in a conversational way:
-
-{text}
-
-Summary:"""
-
-    # Use the same LLM with the summarization prompt
-    response = summarizer.query(prompt)
+    if not text:
+        return ""
+        
+    # Split into sentences
+    sentences = text.split('.')
     
-    # Handle different response formats
-    if isinstance(response, str):
-        return response.strip()
-    elif isinstance(response, dict):
-        return response.get("summary_text", "").strip()
-    elif isinstance(response, list) and len(response) > 0:
-        if isinstance(response[0], dict):
-            return response[0].get("summary_text", "").strip()
-        return str(response[0]).strip()
-    return ""
-
-
-def get_document_context(document: str) -> str:
-    from my_furhat_backend.agents.document_agent import rag_instance
-    """
-    Retrieve the context of a document from the DocumentAgent.
-
-    Generates a prompt instructing the retrieval system to extract the main context and themes from the document.
-    The function then queries the retrieval system (rag_instance) to obtain the document context.
-
-    Parameters:
-        document (str): The name or identifier of the document to retrieve context for.
-
-    Returns:
-        str: The context of the specified document.
-    """
-    # Construct a prompt that asks for the document's overarching context and main themes.
-    prompt = (
-        "Extract the overarching context and main themes from the document titled "
-        f"'{document}'. Focus on summarizing the key topics, narrative, and any major findings "
-        "without including extraneous details."
-    )
-    # Retrieve and return the document context using the retrieval instance.
-    return rag_instance.retrieve_similar(prompt)
-
-
-def generate_followup_prompt(summary: str) -> str:
-    from my_furhat_backend.agents.document_agent import llm
-    """
-    Generate a follow-up prompt for the assistant based on the provided summary.
-
-    Constructs a prompt that instructs the assistant to generate a follow-up question or response,
-    ensuring the conversation remains engaging and contextually relevant.
-
-    Parameters:
-        summary (str): The summarized text to generate a follow-up prompt.
-
-    Returns:
-        str: A follow-up prompt for the assistant based on the summary.
-    """
-    # Build a prompt using the summary to encourage further engagement from the user.
-    prompt = (
-        "Based on the summary provided, generate a follow-up question or response that "
-        "engages the user and encourages further interaction. Be sure to maintain context "
-        "and relevance to the user's query. The summary is as follows: " + summary
-    )
-    # Query the chatbot instance with the generated prompt and return the result.
-    return llm.query(prompt)
+    # If text is shorter than max_length, return as is
+    if len(text.split()) <= max_length:
+        return text
+        
+    # Initialize summary
+    summary = []
+    current_length = 0
+    
+    # Add sentences until we reach max_length
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+            
+        sentence_length = len(sentence.split())
+        
+        # If adding this sentence would exceed max_length, stop
+        if current_length + sentence_length > max_length:
+            break
+            
+        summary.append(sentence)
+        current_length += sentence_length
+    
+    return '. '.join(summary) + '.'
 
 
 def classify_text(content: str, docs: list) -> dict:

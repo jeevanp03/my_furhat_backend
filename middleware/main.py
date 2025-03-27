@@ -35,6 +35,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
 import asyncio
+import logging
+from datetime import datetime
 
 # Import the DocumentAgent and utility functions from the backend.
 from my_furhat_backend.agents.document_agent import DocumentAgent
@@ -45,8 +47,12 @@ from my_furhat_backend.utils.util import (
     generate_followup_prompt,
     classify_text
 )
-
 # Initialize the FastAPI application.
+app = FastAPI()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 app = FastAPI()
 
 
@@ -75,7 +81,6 @@ class EngageRequest(BaseModel):
 # For demonstration purposes, using a simple in-memory store for the latest response.
 # In production, consider using a more robust solution (e.g., session management or a database).
 latest_response = None
-context = None
 
 # Instantiate the DocumentAgent to handle LLM processing.
 agent = DocumentAgent()
@@ -85,26 +90,26 @@ agent = DocumentAgent()
 async def ask_question(transcription: Transcription):
     """
     Process a transcription by running it through the LLM agent synchronously and return the generated response.
-
-    This endpoint receives a POST request containing a transcription (user's spoken text),
-    passes the transcription to the DocumentAgent's `run` method to generate an answer, and returns
-    the result in a JSON response. The agent processing is offloaded to a separate thread to avoid blocking.
-    If an error occurs during processing, a 500 HTTPException is raised.
-
-    Parameters:
-        transcription (Transcription): A Pydantic model instance containing the transcribed text.
-
-    Returns:
-        dict: A JSON response with a 'response' key that holds the generated answer as a string.
     """
     global latest_response
     try:
-        # Offload the agent processing to a separate thread to avoid blocking the event loop.
+        # Offload the agent processing to a separate thread to avoid blocking.
         latest_response = await asyncio.to_thread(agent.run, transcription.content)
+        
+        # Add metadata to the response
+        response = {
+            "status": "success",
+            "response": latest_response,
+            "metadata": {
+                "timestamp": datetime.now().isoformat(),
+                "question_length": len(transcription.content),
+                "answer_length": len(latest_response)
+            }
+        }
+        return response
     except Exception as e:
-        # If any error occurs, raise a HTTP 500 error with the error message.
+        logger.error(f"Error in ask endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    return {"response": latest_response}
 
 
 @app.post("/transcribe", response_model=dict)
@@ -189,32 +194,24 @@ async def get_docs(transcription: Transcription):
 async def engage(engage_request: EngageRequest):
     """
     Process an engagement request by retrieving document context, generating a summary, and producing a followup prompt.
-
-    This endpoint retrieves additional context for the specified document, combines it with the provided answer,
-    generates a summary of this combined text, and then creates a followup prompt for further engagement.
-    If any error occurs during this processing chain, a 500 HTTPException is raised.
-
-    Parameters:
-        engage_request (EngageRequest): A Pydantic model instance containing the document identifier and answer.
-
-    Returns:
-        dict: A JSON response with a 'prompt' key that contains the generated followup prompt.
     """
     try:
-        # Retrieve context for the given document.
-        global context
-        if not context:
-            context = await asyncio.to_thread(get_document_context, engage_request.document)
-        # Combine the answer with the retrieved context.
-        combined_text = f"{engage_request.answer}\nContext: {context}"
-        # Generate a summary of the combined text.
-        summary = await asyncio.to_thread(summarize_text, combined_text)
-        # Generate a followup prompt based on the summary.
-        prompt = await asyncio.to_thread(generate_followup_prompt, summary)
-        return {"prompt": prompt}
+        # Get engaging prompt from document agent
+        prompt = await asyncio.to_thread(agent.engage, engage_request.document, engage_request.answer)
+        
+        response = {
+            "status": "success",
+            "prompt": prompt,
+            "metadata": {
+                "timestamp": datetime.now().isoformat(),
+                "document": engage_request.document,
+                "context_length": len(engage_request.answer)
+            }
+        }
+        return response
     except Exception as e:
+        logger.error(f"Error in engage endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # Run the application using Uvicorn if this module is executed directly.
 if __name__ == "__main__":

@@ -11,8 +11,11 @@ import furhatos.nlu.common.*
 import furhatos.app.templateadvancedskill.flow.Parent
 import furhatos.gestures.Gestures
 import furhatos.app.templateadvancedskill.params.LOCAL_BACKEND_URL
-import furhatos.app.templateadvancedskill.params.AWS_SERVER_URL
 import java.util.concurrent.TimeUnit
+
+data class Transcription(val content: String)
+
+data class EngageRequest(val document: String, val answer: String)
 
 // Document Q&A state, inheriting from Parent.
 fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
@@ -21,22 +24,28 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
     var lastAnswer = ""
     var previousQuestions = mutableListOf<String>()
     var previousAnswers = mutableListOf<String>()
+    var userMood = "neutral" // Track user's mood
+    var lastGestureTime = 0L
 
     onEntry {
         // Lock the attended user during this conversation.
+        furhat.gesture(Gestures.Smile)
         furhat.say("Hello! I'm here to help you learn about $documentName. What would you like to know?")
     }
 
     onExit {
         // Release the attention lock when leaving this state.
+        furhat.gesture(Gestures.Wink)
     }
 
     onResponse<Goodbye> {
+        furhat.gesture(Gestures.Smile)
         furhat.say("Thank you for the interesting conversation! Goodbye!")
         goto(Idle)
     }
 
     onResponse<No> {
+        furhat.gesture(Gestures.Nod)
         furhat.say("Alright, thank you for the conversation. Goodbye!")
         goto(Idle)
     }
@@ -45,9 +54,16 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
         val userQuestion = it.text.trim()
         conversationCount++
         
-        // Signal the robot is thinking
+        // Update user mood based on question content
+        userMood = when {
+            userQuestion.contains(Regex("(great|wonderful|amazing|excellent)", RegexOption.IGNORE_CASE)) -> "positive"
+            userQuestion.contains(Regex("(bad|terrible|awful|horrible)", RegexOption.IGNORE_CASE)) -> "negative"
+            else -> "neutral"
+        }
+        
+        // Signal the robot is thinking with natural gestures
+        furhat.gesture(Gestures.GazeAway)
         furhat.say("Let me think about that...")
-        furhat.gesture(Gestures.GazeAway(duration = 3.0))
         
         // Call the backend /ask endpoint to get an answer.
         val answer = callDocumentAgent(userQuestion)
@@ -64,20 +80,48 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
         lastQuestion = userQuestion
         lastAnswer = cleanAnswer
         
-        // Speak the cleaned answer
+        // Add natural gestures while speaking
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastGestureTime > 3000) { // Minimum 3 seconds between gestures
+            when (userMood) {
+                "positive" -> {
+                    furhat.gesture(Gestures.Smile)
+                    furhat.gesture(Gestures.Nod)
+                }
+                "negative" -> {
+                    furhat.gesture(Gestures.ExpressSad)
+                    furhat.gesture(Gestures.Shake)
+                }
+                else -> {
+                    furhat.gesture(Gestures.Nod)
+                    furhat.gesture(Gestures.GazeAway)
+                }
+            }
+            lastGestureTime = currentTime
+        }
+        
+        // Speak the cleaned answer with natural pauses
         furhat.say(cleanAnswer)
         
-        // Generate a contextual follow-up based on conversation history
+        // Generate a contextual follow-up based on conversation history and user mood
         val followUpPrompt = when {
             conversationCount == 1 -> {
                 // First follow-up: Focus on specific aspects mentioned in the answer
                 val keyAspects = cleanAnswer.split(".").take(2).joinToString(" ")
-                "I notice you're interested in $keyAspects. What would you like to know more about that?"
+                when (userMood) {
+                    "positive" -> "I'm glad you're interested in $keyAspects! What would you like to know more about that?"
+                    "negative" -> "I understand this might be challenging. Let me explain more about $keyAspects. What would you like to know?"
+                    else -> "I notice you're interested in $keyAspects. What would you like to know more about that?"
+                }
             }
             conversationCount == 2 -> {
                 // Second follow-up: Connect to previous question
                 val previousTopic = previousQuestions[0].split(" ").take(3).joinToString(" ")
-                "You asked about $previousTopic earlier. Would you like to explore how that relates to what we just discussed?"
+                when (userMood) {
+                    "positive" -> "You asked about $previousTopic earlier. I'd love to explore how that connects to what we just discussed!"
+                    "negative" -> "You asked about $previousTopic earlier. Let me clarify how that relates to what we just discussed."
+                    else -> "You asked about $previousTopic earlier. Would you like to explore how that relates to what we just discussed?"
+                }
             }
             else -> {
                 // Later follow-ups: Use conversation history for context
@@ -85,49 +129,67 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
                     // Try to get an engaging follow-up from the API
                     val engagePrompt = callEngageUser(documentName, cleanAnswer)
                     if (engagePrompt.isNotEmpty()) {
-                        // Modify the API response to include context
+                        // Modify the API response to include context and mood
                         val context = when {
                             previousQuestions.size >= 2 -> {
                                 val lastTwoTopics = previousQuestions.takeLast(2)
-                                "Building on your questions about ${lastTwoTopics[0]} and ${lastTwoTopics[1]}, $engagePrompt"
+                                when (userMood) {
+                                    "positive" -> "I'm excited to continue our discussion about ${lastTwoTopics[0]} and ${lastTwoTopics[1]}. $engagePrompt"
+                                    "negative" -> "I understand this might be complex. Let's explore how ${lastTwoTopics[0]} and ${lastTwoTopics[1]} connect. $engagePrompt"
+                                    else -> "Building on your questions about ${lastTwoTopics[0]} and ${lastTwoTopics[1]}, $engagePrompt"
+                                }
                             }
                             else -> engagePrompt
                         }
                         context
                     } else {
-                        // Generate contextual fallback based on conversation history
+                        // Generate contextual fallback based on conversation history and mood
                         val recentTopics = previousQuestions.takeLast(2)
-                        "I notice you're particularly interested in ${recentTopics.joinToString(" and ")}. What would you like to explore next?"
+                        when (userMood) {
+                            "positive" -> "I'm really enjoying our discussion about ${recentTopics.joinToString(" and ")}. What would you like to explore next?"
+                            "negative" -> "I understand this might be challenging. Let's explore ${recentTopics.joinToString(" and ")} further. What would you like to know?"
+                            else -> "I notice you're particularly interested in ${recentTopics.joinToString(" and ")}. What would you like to explore next?"
+                        }
                     }
                 } catch (e: Exception) {
-                    println("Error in engage API call: ${e.message}")
-                    // Fallback with context from previous questions
+                    // Fallback with context from previous questions and mood
                     val recentTopics = previousQuestions.takeLast(2)
-                    "I notice you're particularly interested in ${recentTopics.joinToString(" and ")}. What would you like to explore next?"
+                    when (userMood) {
+                        "positive" -> "I'm really enjoying our discussion about ${recentTopics.joinToString(" and ")}. What would you like to explore next?"
+                        "negative" -> "I understand this might be challenging. Let's explore ${recentTopics.joinToString(" and ")} further. What would you like to know?"
+                        else -> "I notice you're particularly interested in ${recentTopics.joinToString(" and ")}. What would you like to explore next?"
+                    }
                 }
             }
         }
         
-        // Ask the follow-up question
+        // Ask the follow-up question with appropriate gesture
+        when (userMood) {
+            "positive" -> furhat.gesture(Gestures.Smile)
+            "negative" -> furhat.gesture(Gestures.ExpressSad)
+            else -> furhat.gesture(Gestures.Nod)
+        }
         furhat.ask(followUpPrompt)
     }
 
     onNoResponse {
+        furhat.gesture(Gestures.ExpressSad)
         furhat.say("I didn't catch that. Could you please repeat your question?")
         reentry()
     }
 }
 
 // Helper function to call the /ask endpoint.
-fun callDocumentAgent(question: String): String {
-    val baseUrl = "http://localhost:8000"
+private fun callDocumentAgent(question: String): String {
+    val baseUrl = LOCAL_BACKEND_URL
     val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
     return try {
-        val requestBody = JSONObject().put("content", question).toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+        val requestBody = JSONObject().put("content", question).toString()
+            .toRequestBody("application/json; charset=utf-8".toMediaType())
         val request = Request.Builder()
             .url("$baseUrl/ask")
             .post(requestBody)
@@ -140,14 +202,15 @@ fun callDocumentAgent(question: String): String {
             jsonObject.getString("response")
         }
     } catch (e: ConnectException) {
-        println(e)
         "I'm sorry, I cannot process your request right now."
+    } catch (e: Exception) {
+        "I apologize, but I encountered an error processing your question."
     }
 }
 
-// New helper function to call the "engage user" API endpoint.
-fun callEngageUser(documentName: String, answer: String): String {
-    val baseUrl = "http://localhost:8000"
+// Helper function to call the /engage endpoint.
+private fun callEngageUser(documentName: String, answer: String): String {
+    val baseUrl = LOCAL_BACKEND_URL
     val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -157,7 +220,8 @@ fun callEngageUser(documentName: String, answer: String): String {
         val map = JSONObject()
         map.put("document", documentName)
         map.put("answer", answer)
-        val requestBody = map.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+        val requestBody = map.toString()
+            .toRequestBody("application/json; charset=utf-8".toMediaType())
 
         val request = Request.Builder()
             .url("$baseUrl/engage")
@@ -171,12 +235,12 @@ fun callEngageUser(documentName: String, answer: String): String {
             try {
                 jsonObject.getString("prompt")
             } catch (e: Exception) {
-                println("Error parsing prompt from response: $jsonResponse")
                 ""  // Return empty string to trigger fallback question
             }
         }
     } catch (e: ConnectException) {
-        println(e)
+        ""  // Return empty string to trigger fallback question
+    } catch (e: Exception) {
         ""  // Return empty string to trigger fallback question
     }
 }

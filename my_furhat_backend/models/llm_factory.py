@@ -185,7 +185,7 @@ class LlamaCcpLLM(BaseLLM):
         kwargs.setdefault("n_gpu_layers", 14)
         kwargs.setdefault("temperature", 0.1)
         kwargs.setdefault("n_batch", 300)
-        kwargs.setdefault("max_tokens", 512)
+        kwargs.setdefault("max_tokens", 700)
         kwargs.setdefault("repeat_penalty", 1.5)
         kwargs.setdefault("top_p", 0.5)
         kwargs.setdefault("verbose", True)
