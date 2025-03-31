@@ -230,7 +230,7 @@ class DocumentAgent:
     def __init__(self, model_id: str = "Mistral-7B-Instruct-v0.3.Q4_K_M.gguf"):
         """
         Initialize the DocumentAgent.
-        
+
         Args:
             model_id (str): ID of the model to use for the chatbot
         """
@@ -357,14 +357,14 @@ class DocumentAgent:
         self.graph.add_edge("uncertainty_response", END)
         self.graph.add_edge("format_response", END)
         self.graph.add_edge("answer_followup", END)
-        
+    
     def input_node(self, state: State) -> dict:
         """
         Process the initial user input.
-        
+
         Args:
             state (State): Current conversation state
-            
+
         Returns:
             dict: Updated state with processed input
         """
@@ -375,14 +375,14 @@ class DocumentAgent:
         # Append the human message to the conversation history
         state["messages"].append(human_msg)
         return {"messages": state["messages"]}
-        
+    
     def retrieval_node(self, state: State) -> dict:
         """
         Retrieve relevant document context using RAG.
-        
+
         Args:
             state (State): Current conversation state
-            
+
         Returns:
             dict: Updated state with retrieved context
         """
@@ -409,14 +409,14 @@ class DocumentAgent:
         messages.append(tool_msg)
         
         return {"messages": messages}
-        
+    
     def summarization_node(self, state: State) -> dict:
         """
         Summarize the retrieved document context.
-        
+
         Args:
             state (State): Current conversation state
-            
+
         Returns:
             dict: Updated state with summarized context
         """
@@ -469,7 +469,7 @@ class DocumentAgent:
         
         Args:
             state (State): Current conversation state
-            
+
         Returns:
             dict: Updated state with analysis results
         """
@@ -555,14 +555,14 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         })
         
         return state
-        
+    
     def uncertainty_response_node(self, state: State) -> dict:
         """
         Handle cases where content uncertainty is detected.
         
         Args:
             state (State): Current conversation state
-            
+
         Returns:
             dict: Updated state with clarification if needed
         """
@@ -574,7 +574,7 @@ REASONING: [brief explanation of the decision, including specific reasons for or
             messages.append(AIMessage(content=clarification))
             
         return {"messages": messages}
-        
+    
     def generation_node(self, state: State) -> dict:
         """
         Generate the final response using the chatbot.
@@ -624,7 +624,7 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         
         Args:
             text (str): Text to analyze
-            
+
         Returns:
             float: Sentiment score between -1 and 1
         """
@@ -638,7 +638,7 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         Args:
             text (str): Text to adjust
             sentiment (float): Sentiment score
-            
+
         Returns:
             str: Adjusted text
         """
@@ -655,7 +655,7 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         Args:
             document_name (str): Name of the document
             answer (str): Previous answer
-            
+
         Returns:
             str: Engaging follow-up prompt
         """
@@ -701,7 +701,7 @@ REASONING: [brief explanation of the decision, including specific reasons for or
     def _get_conversation_context(self) -> str:
         """
         Get a summary of the conversation context.
-        
+
         Returns:
             str: Formatted conversation context
         """
@@ -712,15 +712,15 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         for exchange in self.conversation_memory:
             context += f"Q: {exchange['question']}\nA: {exchange['answer']}\n"
         return context
-        
+    
     def run(self, initial_input: str, system_prompt: str = None) -> str:
         """
         Execute the document agent's conversation flow.
-        
+
         Args:
             initial_input (str): The user's query to initiate the conversation
             system_prompt (str, optional): An optional system prompt to set the conversational context
-            
+
         Returns:
             str: The cleaned output from the final AI-generated message
         """
@@ -1105,9 +1105,9 @@ if __name__ == "__main__":
             break
 
         try:
-            # Run the agent with the provided input.
+        # Run the agent with the provided input.
             print("\nProcessing your query...")
-            response = agent.run(user_input)
+        response = agent.run(user_input)
             print("\nAgent:", response)
             
             # Test the engage functionality

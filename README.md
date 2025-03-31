@@ -6,6 +6,7 @@ This project implements an advanced conversational agent that can:
 - Dynamically route queries to web search or vectorstore retrieval.
 - Integrate with external APIs (Foursquare, OpenStreetMap, Overpass, IPData) for location-based or IP-based queries.
 - Generate natural language responses via Large Language Models (LLMs) such as HuggingFace Transformers or Llama Cpp.
+- Leverage GPU acceleration for improved performance on EC2 instances.
 
 It includes **FastAPI** endpoints for synchronous/asynchronous interaction, **LangGraph**-based state machines for multi-step conversation flows, and classification tools.
 
@@ -20,6 +21,10 @@ It includes **FastAPI** endpoints for synchronous/asynchronous interaction, **La
   - [Configuration](#configuration)
     - [Creating Your .env File](#creating-your-env-file)
     - [Using direnv for Environment Management](#using-direnv-for-environment-management)
+  - [EC2 Instance Setup](#ec2-instance-setup)
+    - [Hardware Specifications](#hardware-specifications)
+    - [Storage Setup](#storage-setup)
+    - [Model Management](#model-management)
   - [Connecting to the EC2 Instance](#connecting-to-the-ec2-instance)
     - [Using Terminal SSH](#using-terminal-ssh)
     - [Using VS Code Remote - SSH](#using-vs-code-remote---ssh)
@@ -52,7 +57,7 @@ A simplified view of the repository (showing the most important directories and 
 .
 ├── furhat_skills/               # (Optional) Skills or scripts for Furhat robot integration
 ├── middleware/
-│   └── main.py                  # FastAPI or other APIs for the middleware layer
+│   └── main.py                  # FastAPI endpoints for document agent interaction
 ├── my_furhat_backend/
 │   ├── agents/
 │   │   ├── document_agent.py            # State-graph-based DocumentAgent for RAG conversations
@@ -89,6 +94,78 @@ A simplified view of the repository (showing the most important directories and 
 
 ---
 
+## EC2 Instance Setup
+
+### Hardware Specifications
+
+The project is optimized for running on an EC2 instance with the following specifications:
+- Instance Type: g4dn.xlarge (or similar GPU-enabled instance)
+- GPU: NVIDIA Tesla T4
+- Memory: 16 GB
+- Storage: 100 GB SSD
+- Network: High bandwidth
+
+### Storage Setup
+
+The EC2 instance uses the following storage structure:
+```
+/mnt/
+├── data/
+│   ├── documents/          # PDF documents for RAG
+│   └── vector_store/      # Chroma vector store
+├── models/
+│   ├── caches/           # Model caches
+│   │   ├── huggingface/  # HuggingFace model cache
+│   │   └── document_agent/ # Document agent cache
+│   └── gguf/             # GGUF model files
+```
+
+### Model Management
+
+1. **Model Files:**
+   - GGUF models are stored in `/mnt/models/gguf/`
+   - Supported models include:
+     - Mistral-7B-Instruct-v0.3.Q4_K_M.gguf
+     - Mistral-Nemo-Instruct-2407-Q4_K_M.gguf
+     - Mistral-Small-24B-Instruct-2501-Q4_K_M.gguf
+     - SmolLM2-1.7B-Instruct-Q4_K_M.gguf
+
+2. **Cache Management:**
+   - Model caches are stored in `/mnt/models/caches/`
+   - To clear caches:
+     ```bash
+     sudo rm -rf /mnt/models/caches/huggingface/* /mnt/models/caches/document_agent/*
+     ```
+
+3. **Vector Store:**
+   - Located at `/mnt/data/vector_store/`
+   - To clear vector store:
+     ```bash
+     sudo rm -rf /mnt/data/vector_store/*
+     ```
+
+### GPU Optimization
+
+The project includes several GPU optimizations:
+
+1. **LLM Processing:**
+   - Uses CUDA acceleration for model inference
+   - Optimized batch processing for embeddings
+   - GPU memory management with automatic cache clearing
+
+2. **RAG System:**
+   - GPU-accelerated document embeddings
+   - Optimized chunking parameters for better performance
+   - Parallel processing for document chunking
+   - Efficient vector store operations
+
+3. **Memory Management:**
+   - Automatic GPU cache clearing
+   - Memory usage monitoring
+   - Efficient batch processing
+
+---
+
 ## Requirements & Installation
 
 This project uses a hybrid dependency management approach: some dependencies are installed via pip into your environment, and others are managed by Poetry (tracked in the `poetry.lock` file).
@@ -108,7 +185,7 @@ This project uses a hybrid dependency management approach: some dependencies are
    poetry install
    ```
 
-   This will update the `poetry.lock` file and install dependencies into Poetry’s virtual environment.
+   This will update the `poetry.lock` file and install dependencies into Poetry's virtual environment.
 
 3. **Activate the Poetry Environment**  
    It's important to activate your Poetry environment before installing any additional pip dependencies. See the [Activating the Poetry Environment](#activating-the-poetry-environment) section below.
@@ -128,7 +205,7 @@ This project uses a hybrid dependency management approach: some dependencies are
 
 ### Creating Your .env File
 
-Because the `.env` file is typically listed in `.gitignore`, you’ll need to create your own locally:
+Because the `.env` file is typically listed in `.gitignore`, you'll need to create your own locally:
 
 1. **Create a `.env` file** in the root directory of the project (same level as `pyproject.toml`).
 2. **Add your API keys and environment variables.** For example:
@@ -294,7 +371,7 @@ If you haven't already set up your EC2 instance with Git and Docker, follow thes
 
 ## Starting the Dev Container
 
-This section explains how to launch an interactive development container using VS Code’s Remote - Containers extension. You can use this container for interactive development either locally or on your EC2 instance.
+This section explains how to launch an interactive development container using VS Code's Remote - Containers extension. You can use this container for interactive development either locally or on your EC2 instance.
 
 ### Locally
 
@@ -377,101 +454,161 @@ There are multiple ways to test or interact with the conversation agent:
    ```bash
    poetry run python middleware.main.py
    ```
-   Or, if it’s a FastAPI service:
+   Or, if it's a FastAPI service:
    ```bash
    uvicorn middleware.main:app --reload
    ```
 
 ### Interacting with the API Endpoints
 
-Now that your server is running, you have several options to test the endpoints:
+The middleware provides several endpoints for interacting with the document agent:
 
-#### 1. Interactive API Documentation
+1. **Interactive API Documentation**
+   - Access the Swagger UI at `http://localhost:8000/docs`
+   - Access the ReDoc UI at `http://localhost:8000/redoc`
 
-FastAPI automatically provides interactive docs:
+2. **Using cURL Commands**
 
-- Open your browser and navigate to [http://localhost:8000/docs](http://localhost:8000/docs) for the Swagger UI.
-- Alternatively, visit [http://localhost:8000/redoc](http://localhost:8000/redoc).
+   a. **Ask a Question** (Synchronous):
+   ```bash
+   curl -X POST "http://localhost:8000/ask" \
+        -H "Content-Type: application/json" \
+        -d '{"content": "What is the MIMIR project?"}'
+   ```
 
-From there, you can:
+   b. **Transcribe** (Asynchronous):
+   ```bash
+   curl -X POST "http://localhost:8000/transcribe" \
+        -H "Content-Type: application/json" \
+        -d '{"content": "Tell me about the project timeline"}'
+   ```
 
-- Click on the `/ask` endpoint, click **"Try it out"**, and enter a JSON payload such as:
-  ```json
-  {
-    "content": "What is the document about?"
-  }
-  ```
-  Then click **Execute** to see the response.
-- Similarly, test the `/transcribe` and `/response` `/get_docs` endpoints.
+   c. **Get Response** (For async requests):
+   ```bash
+   curl "http://localhost:8000/response"
+   ```
 
-#### 2. Using cURL Commands
+   d. **Get Documents**:
+   ```bash
+   curl -X POST "http://localhost:8000/get_docs" \
+        -H "Content-Type: application/json" \
+        -d '{"content": "Show me the annual report"}'
+   ```
 
-Open a terminal and run the following commands:
+   e. **Engage** (Generate follow-up):
+   ```bash
+   curl -X POST "http://localhost:8000/engage" \
+        -H "Content-Type: application/json" \
+        -d '{
+             "document": "NorwAi annual report 2023.pdf",
+             "answer": "The project aims to investigate copyright-protected content in language models."
+           }'
+   ```
 
-**Test `/ask`:**
+3. **Using a Python Script with Requests**
 
-```bash
-curl -X POST "http://localhost:8000/ask" \
-     -H "Content-Type: application/json" \
-     -d '{"content": "What is the document about?"}'
-```
+   ```python
+   import requests
+   import json
 
-**Test `/transcribe`:**
+   BASE_URL = "http://localhost:8000"
 
-```bash
-curl -X POST "http://localhost:8000/transcribe" \
-     -H "Content-Type: application/json" \
-     -d '{"content": "Tell me more about the document."}'
-```
+   def ask_question(question: str) -> dict:
+       response = requests.post(
+           f"{BASE_URL}/ask",
+           json={"content": question}
+       )
+       return response.json()
 
-**Test `/response`:**
+   def transcribe(text: str) -> dict:
+       response = requests.post(
+           f"{BASE_URL}/transcribe",
+           json={"content": text}
+       )
+       return response.json()
 
-```bash
-curl -X GET "http://localhost:8000/response"
-```
+   def get_response() -> dict:
+       response = requests.get(f"{BASE_URL}/response")
+       return response.json()
 
-**Test `/get_docs`:**
+   def get_docs(query: str) -> dict:
+       response = requests.post(
+           f"{BASE_URL}/get_docs",
+           json={"content": query}
+       )
+       return response.json()
 
-```bash
-curl -X POST "http://localhost:8000/get_docs" \
-     -H "Content-Type: application/json" \
-     -d '{"content": "I want a document about business management."}'
-```
+   def engage(document: str, answer: str) -> dict:
+       response = requests.post(
+           f"{BASE_URL}/engage",
+           json={"document": document, "answer": answer}
+       )
+       return response.json()
 
-#### 3. Using a Python Script with Requests
+   # Example usage
+   if __name__ == "__main__":
+       # Ask a question
+       result = ask_question("What is the MIMIR project?")
+       print("Answer:", result["response"])
 
-You can write a simple Python script to test your endpoints:
+       # Generate a follow-up
+       follow_up = engage(
+           "NorwAi annual report 2023.pdf",
+           result["response"]
+       )
+       print("Follow-up:", follow_up["prompt"])
+   ```
 
-```python
-import requests
+### Key Components
 
-# URLs for the endpoints
-ask_url = "http://localhost:8000/ask"
-transcribe_url = "http://localhost:8000/transcribe"
-response_url = "http://localhost:8000/response"
-get_docs_url = "http://localhost:8000/get_docs"
+1. **Document Agent**
+   - Handles document ingestion and RAG-based conversations
+   - Uses GPU-accelerated embeddings for efficient retrieval
+   - Implements state-graph-based conversation flow
+   - Generates natural follow-up questions
 
-# Test the /ask endpoint
-ask_payload = {"content": "What is the document about?"}
-ask_response = requests.post(ask_url, json=ask_payload)
-print("Ask Response:", ask_response.json())
+2. **RAG System**
+   - Efficient document chunking with optimized parameters
+   - GPU-accelerated embeddings using HuggingFace or LlamaCpp
+   - Chroma vector store for fast similarity search
+   - Cross-encoder reranking for improved relevance
 
-# Test the /transcribe endpoint
-transcribe_payload = {"content": "Tell me more about the document."}
-transcribe_response = requests.post(transcribe_url, json=transcribe_payload)
-print("Transcribe Response:", transcribe_response.json())
+3. **LLM Integration**
+   - Support for multiple GGUF models
+   - GPU-accelerated inference
+   - Optimized memory management
+   - Efficient batch processing
 
-# Test the /response endpoint
-response = requests.get(response_url)
-print("Latest Agent Response:", response.json())
+4. **API Layer**
+   - FastAPI-based REST endpoints
+   - Asynchronous request handling
+   - Real-time response generation
+   - Document management and retrieval
 
-# Test the /get_docs endpoint
-ask_payload = {"content": "I want a document about business management."}
-ask_response = requests.post(get_docs_url, json=ask_payload)
-print("Get_Doc Response:", ask_response.json())
-```
+### Notes
 
-Running any of these methods will allow you to interact with your FastAPI endpoints and verify that your DocumentAgent is processing the requests correctly.
+1. **GPU Usage**
+   - Monitor GPU memory usage with `nvidia-smi`
+   - Clear GPU cache when needed using the provided utilities
+   - Adjust batch sizes based on available GPU memory
+
+2. **Performance Optimization**
+   - Use appropriate chunk sizes for document processing
+   - Monitor vector store size and performance
+   - Clear caches periodically to prevent memory issues
+   - Use batch processing for large document sets
+
+3. **Error Handling**
+   - Check GPU memory before large operations
+   - Monitor vector store integrity
+   - Handle model loading errors gracefully
+   - Implement proper error logging
+
+4. **Security**
+   - Secure API endpoints with authentication
+   - Protect sensitive document content
+   - Implement rate limiting
+   - Monitor system resources
 
 ---
 
@@ -513,7 +650,7 @@ This command retrieves the virtual environment's path from `poetry env info --pa
 
 ### Additional Troubleshooting Steps
 
-- **Project Directory:** Ensure you’re in the directory containing your `pyproject.toml` file, as some Poetry commands require it.
+- **Project Directory:** Ensure you're in the directory containing your `pyproject.toml` file, as some Poetry commands require it.
 - **Check for Aliases:** Verify there is no shell alias or function named `poetry` or `shell` interfering with the command.
 - **Reinstall/Upgrade Poetry:** Although version 2.0.1 should work, if issues persist, consider reinstalling or updating Poetry.
 - **Manual Activation:** If `poetry shell` fails, using `source $(poetry env info --path)/bin/activate` should let you work within your Poetry virtual environment.
