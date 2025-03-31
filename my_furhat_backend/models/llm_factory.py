@@ -247,11 +247,13 @@ class LlamaCcpLLM(BaseLLM):
         kwargs.setdefault("repeat_penalty", 1.5)
         kwargs.setdefault("top_p", 0.5)
         kwargs.setdefault("verbose", True)
-        kwargs.setdefault("n_threads", 4)
+        
+        # Set n_threads only if not already provided in kwargs
+        if "n_threads" not in kwargs:
+            kwargs["n_threads"] = multiprocessing.cpu_count() - 1
         
         self.chat_llm = ChatLlamaCpp(
             model_path=model_path,
-            n_threads=multiprocessing.cpu_count() - 1,
             do_sample=True,
             **kwargs
         )
