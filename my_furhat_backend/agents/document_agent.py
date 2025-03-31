@@ -36,29 +36,17 @@ import numpy as np
 from typing import Dict, Tuple, Optional
 from datetime import datetime
 from transformers import pipeline
+import re
 
 from my_furhat_backend.models.chatbot_factory import create_chatbot
 from my_furhat_backend.utils.util import clean_output, summarize_text
 from my_furhat_backend.RAG.rag_flow import RAG
 from my_furhat_backend.utils.gpu_utils import print_gpu_status, clear_gpu_cache
+from my_furhat_backend.models.llm_factory import create_llm
 
 # Set up cache directories
 CACHE_DIR = config["HF_HOME"]
 os.makedirs(CACHE_DIR, exist_ok=True)
-
-# # Initialize RAG with caching
-# rag_instance = RAG(
-#     hf=True,
-#     persist_directory=config["VECTOR_STORE_PATH"],
-#     path_to_document=os.path.join(config["DOCUMENTS_PATH"], "NorwAi annual report 2023.pdf")
-# )
-
-# # Initialize chatbot with optimized settings
-# chatbot = create_chatbot(
-#     "llama",
-#     model_id="Mistral-7B-Instruct-v0.3.Q4_K_M.gguf",
-# )
-# llm = chatbot.llm
 
 class State(TypedDict):
     """
@@ -250,15 +238,21 @@ class DocumentAgent:
         
         self.memory = MemorySaver()
         
+        # Initialize RAG with caching
         self.rag_instance = RAG(
             hf=True,
             persist_directory=config["VECTOR_STORE_PATH"],
             path_to_document=os.path.join(config["DOCUMENTS_PATH"], "NorwAi annual report 2023.pdf")
         )
         
+        # Initialize chatbot with optimized settings
         self.chatbot = create_chatbot(
             "llama",
             model_id=model_id,
+            n_ctx=4096,  # Reduced context window
+            n_batch=512,  # Increased batch size
+            n_threads=4,  # Optimize thread count
+            n_gpu_layers=32  # Use more GPU layers
         )
         self.llm = self.chatbot.llm
         
@@ -266,22 +260,26 @@ class DocumentAgent:
         
         self.graph = StateGraph(State)
         
+        # Initialize caches with larger sizes
         self.question_cache = QuestionCache()
         self.context_cache = {}
-        self.summary_cache = {}
+        self.summary_cache = {}  # New cache for document summaries
         
         self._build_graph()
         
         self.compiled_graph = self.graph.compile(checkpointer=self.memory)
         
+        # Initialize conversation memory with a larger size
         self.conversation_memory = []
-        self.max_memory_size = 10
+        self.max_memory_size = 10  # Increased from 5
         
+        # Initialize sentiment analyzer with specific model and caching
         self.sentiment_analyzer = pipeline(
             "sentiment-analysis",
             model="distilbert-base-uncased-finetuned-sst-2-english",
-            cache_dir=config["HF_HOME"]
-        ).to("cuda")  # Move to CUDA after initialization
+            device="cuda",  # Use CUDA for sentiment analysis
+            model_kwargs={"cache_dir": config["HF_HOME"]}  # Enable model caching
+        )
         
         # Initialize personality traits
         self.personality_traits = {
@@ -308,35 +306,53 @@ class DocumentAgent:
         7. format_response_node: Format and clean response
         8. answer_followup_node: Handle follow-up questions
         """
-        self.graph.add_node("input", self.input_node)
+        # Add nodes to the graph with corresponding callback functions
+        self.graph.add_node("capture_input", self.input_node)
         self.graph.add_node("retrieval", self.retrieval_node)
-        self.graph.add_node("summarization", self.summarization_node)
         self.graph.add_node("content_analysis", self.content_analysis_node)
+        self.graph.add_node("summarization", self.summarization_node)
         self.graph.add_node("uncertainty_response", self.uncertainty_response_node)
         self.graph.add_node("generation", self.generation_node)
         self.graph.add_node("format_response", self.format_response_node)
         self.graph.add_node("answer_followup", self.answer_followup_node)
-        
-        # Define edges and conditions
-        self.graph.add_edge(START, "input")
-        self.graph.add_edge("input", "retrieval")
-        self.graph.add_edge("retrieval", "summarization")
-        self.graph.add_edge("summarization", "content_analysis")
-        self.graph.add_edge("content_analysis", "uncertainty_response")
-        self.graph.add_edge("uncertainty_response", "generation")
-        self.graph.add_edge("generation", "format_response")
-        self.graph.add_edge("format_response", END)
-        
-        # Add conditional edges for follow-up handling
+
+        # Define linear flow from the start to input
+        self.graph.add_edge(START, "capture_input")
+
+        # Add conditional edge from input to either retrieval or answer_followup
         self.graph.add_conditional_edges(
-            "format_response",
-            self._determine_next_node,
+            "capture_input",
+            lambda state: self._determine_next_node(state),
             {
-                "answer_followup": "answer_followup",
-                END: END
+                "retrieval": "retrieval",
+                "answer_followup": "answer_followup"
             }
         )
-        self.graph.add_edge("answer_followup", "retrieval")
+
+        # Define linear flow from retrieval to analysis
+        self.graph.add_edge("retrieval", "content_analysis")
+
+        # Define conditional branching from the content analysis node
+        self.graph.add_conditional_edges(
+            "content_analysis",
+            lambda state: state.get("next"),
+            {
+                "summarization": "summarization",
+                "uncertainty_response": "uncertainty_response",
+                "generation": "generation"
+            }
+        )
+
+        # If summarization is executed, then proceed to generation
+        self.graph.add_edge("summarization", "generation")
+
+        # After generation, proceed directly to response formatting
+        self.graph.add_edge("generation", "format_response")
+
+        # Both uncertainty_response and format_response lead to the END node
+        self.graph.add_edge("uncertainty_response", END)
+        self.graph.add_edge("format_response", END)
+        self.graph.add_edge("answer_followup", END)
         
     def input_node(self, state: State) -> dict:
         """
@@ -348,13 +364,13 @@ class DocumentAgent:
         Returns:
             dict: Updated state with processed input
         """
-        messages = state["messages"]
-        input_text = state["input"]
-        
-        # Add user message to conversation
-        messages.append(HumanMessage(content=input_text))
-        
-        return {"messages": messages}
+        # Ensure that the 'messages' list exists in the state
+        state.setdefault("messages", [])
+        # Create a HumanMessage using the user's input
+        human_msg = HumanMessage(content=state.get("input", ""))
+        # Append the human message to the conversation history
+        state["messages"].append(human_msg)
+        return {"messages": state["messages"]}
         
     def retrieval_node(self, state: State) -> dict:
         """
@@ -380,7 +396,15 @@ class DocumentAgent:
         context = self.rag_instance.get_relevant_context(input_text)
         self.context_cache[input_text] = context
         
-        return {"messages": messages, "context": context}
+        # Create a ToolMessage with the retrieval results
+        tool_msg = ToolMessage(
+            content=f"Retrieved context:\n{context}",
+            name="document_retriever",
+            tool_call_id=str(uuid.uuid4())
+        )
+        messages.append(tool_msg)
+        
+        return {"messages": messages}
         
     def summarization_node(self, state: State) -> dict:
         """
@@ -393,16 +417,47 @@ class DocumentAgent:
             dict: Updated state with summarized context
         """
         messages = state["messages"]
-        context = state.get("context", "")
         
-        # Check cache for existing summary
-        if context in self.summary_cache:
-            summary = self.summary_cache[context]
-        else:
-            summary = summarize_text(context)
-            self.summary_cache[context] = summary
+        # Locate the ToolMessage that holds the retrieved document context
+        retrieval_msg = next(
+            (msg for msg in messages
+             if isinstance(msg, ToolMessage) and msg.name == "document_retriever"),
+            None
+        )
+        
+        if retrieval_msg:
+            # Remove any header text from the retrieval message
+            text_to_summarize = retrieval_msg.content.replace("Retrieved context:\n", "")
             
-        return {"messages": messages, "summary": summary}
+            # Check if we have a cached summary for this content
+            content_hash = hash(text_to_summarize)
+            if content_hash in self.summary_cache:
+                summarized_text = self.summary_cache[content_hash]
+            else:
+                # Generate a summary of the retrieved content
+                summarized_text = summarize_text(
+                    text_to_summarize,
+                    max_length=400,
+                    min_length=50
+                )
+                # Cache the summary
+                self.summary_cache[content_hash] = summarized_text
+                
+                # Limit cache size
+                if len(self.summary_cache) > 1000:
+                    self.summary_cache.pop(next(iter(self.summary_cache)))
+        else:
+            summarized_text = "No document context available to summarize."
+        
+        # Create a new ToolMessage for the summarized context
+        summary_msg = ToolMessage(
+            content=f"Summarized context:\n{summarized_text}",
+            name="summarizer",
+            tool_call_id=str(uuid.uuid4())
+        )
+        messages.append(summary_msg)
+        
+        return {"messages": messages}
         
     def content_analysis_node(self, state: State) -> dict:
         """
@@ -415,17 +470,87 @@ class DocumentAgent:
             dict: Updated state with analysis results
         """
         messages = state["messages"]
-        summary = state.get("summary", "")
         
-        # Analyze content quality and uncertainty
-        uncertainty_score = self._analyze_uncertainty(summary)
-        quality_score = self._analyze_quality(summary)
+        # Get the retrieval message
+        retrieval_msg = next(
+            (msg for msg in messages 
+            if isinstance(msg, ToolMessage) and msg.name == "document_retriever"),
+            None
+        )
         
-        return {
-            "messages": messages,
-            "uncertainty_score": uncertainty_score,
-            "quality_score": quality_score
-        }
+        if not retrieval_msg:
+            state["next"] = "uncertainty_response"
+            return state
+
+        # Extract the actual content (remove the header)
+        content = retrieval_msg.content.replace("Retrieved context:\n", "").strip()
+        
+        # Check content length (rough estimate of tokens)
+        content_length = len(content.split())
+        needs_summary = content_length > 500  # If content is longer than 500 words, summarize
+        
+        # Create a comprehensive prompt for the LLM to analyze the content
+        prompt = f"""Analyze the following retrieved content and determine the best way to process it.
+Consider all aspects and provide a structured response:
+
+Content to analyze:
+{content}
+
+Analyze the following aspects:
+
+1. Content Length and Complexity
+   - Is the content longer than 300 words?
+   - Does it contain multiple paragraphs or sections?
+   - Is there redundant or repetitive information?
+   - Would it benefit from being more concise?
+
+2. Information Quality
+   - Is the information complete and specific?
+   - Are there any ambiguities or uncertainties?
+   - Is the information relevant to the query?
+   - Is there unnecessary detail that could be condensed?
+
+3. Summarization Benefits
+   - Would summarizing help focus on key points?
+   - Is there extraneous information that could be removed?
+   - Would a shorter version be more effective?
+   - Could the information be more impactful if condensed?
+
+Respond in the following format:
+UNCERTAINTY_PRESENT: [yes/no]
+NEXT_STEP: [summarization/uncertainty_response/generation]
+REASONING: [brief explanation of the decision, including specific reasons for or against summarization]"""
+
+        # Get the LLM's analysis
+        response = self.llm.query(prompt)
+        
+        # Parse the response
+        analysis = {}
+        for line in response.content.split('\n'):
+            if ':' in line:
+                key, value = line.split(':', 1)
+                analysis[key.strip()] = value.strip().lower()
+        
+        # Determine next step based on content length and analysis
+        next_step = analysis.get("next_step", "generation")
+        if needs_summary and next_step != "uncertainty_response":
+            next_step = "summarization"
+        elif next_step == "summarization" and not needs_summary:
+            # If LLM suggests summarization but content is short, check reasoning
+            reasoning = analysis.get("reasoning", "").lower()
+            if any(keyword in reasoning for keyword in ["redundant", "repetitive", "condense", "concise", "focus"]):
+                next_step = "summarization"
+            else:
+                next_step = "generation"
+        
+        # Update state with analysis results
+        state.update({
+            "needs_summary": needs_summary,
+            "uncertainty": analysis.get("uncertainty_present", "no") == "yes",
+            "next": next_step
+        })
+        
+        return state
         
     def uncertainty_response_node(self, state: State) -> dict:
         """
@@ -456,13 +581,16 @@ class DocumentAgent:
         Returns:
             dict: Updated state with generated response
         """
-        messages = state["messages"]
+        messages = state.get("messages", [])
         summary = state.get("summary", "")
         
-        response = self.chatbot.generate_response(messages, summary)
-        messages.append(AIMessage(content=response))
+        # Add the summary as context to the conversation
+        if summary:
+            messages.insert(0, SystemMessage(content=f"Context: {summary}"))
         
-        return {"messages": messages}
+        # Use the chatbot to generate the response
+        updated_state = self.chatbot.chatbot({"messages": messages})
+        return updated_state
         
     def format_response_node(self, state: State) -> dict:
         """
@@ -527,8 +655,18 @@ class DocumentAgent:
         Returns:
             str: Engaging follow-up prompt
         """
-        return f"Based on the {document_name}, {answer}\n\nWould you like to know more about any specific aspect?"
+        # Use personality traits to influence prompt generation
+        curiosity_level = self.personality_traits["curiosity"]
+        empathy_level = self.personality_traits["empathy"]
         
+        # Generate different types of prompts based on personality
+        if curiosity_level > 0.7:
+            return f"I'm really curious about this! What would you like to explore next about {document_name}?"
+        elif empathy_level > 0.7:
+            return f"I find this topic fascinating. What aspects of {document_name} would you like to discuss further?"
+        else:
+            return f"Would you like to know more about {document_name}?"
+            
     def _update_conversation_memory(self, question: str, answer: str) -> None:
         """
         Update the conversation memory with new Q&A pair.
@@ -537,99 +675,272 @@ class DocumentAgent:
             question (str): User question
             answer (str): System answer
         """
+        # Add new exchange
         self.conversation_memory.append({
             "question": question,
             "answer": answer,
             "timestamp": datetime.now().isoformat()
         })
         
-        # Keep memory size within limit
+        # Keep only last N exchanges for context
         if len(self.conversation_memory) > self.max_memory_size:
-            self.conversation_memory.pop(0)
+            # Remove oldest entries
+            self.conversation_memory = self.conversation_memory[-self.max_memory_size:]
+            
+        # Clean up old follow-up questions
+        self.conversation_memory = [
+            msg for msg in self.conversation_memory 
+            if not (msg.get("follow_up", False) and 
+                   (datetime.now() - datetime.fromisoformat(msg["timestamp"])).days > 1)
+        ]
             
     def _get_conversation_context(self) -> str:
         """
-        Get the current conversation context.
+        Get a summary of the conversation context.
         
         Returns:
             str: Formatted conversation context
         """
-        context = []
-        for qa in self.conversation_memory[-3:]:  # Last 3 exchanges
-            context.append(f"Q: {qa['question']}\nA: {qa['answer']}")
-        return "\n\n".join(context)
+        if not self.conversation_memory:
+            return ""
+            
+        context = "Previous conversation:\n"
+        for exchange in self.conversation_memory:
+            context += f"Q: {exchange['question']}\nA: {exchange['answer']}\n"
+        return context
         
     def run(self, initial_input: str, system_prompt: str = None) -> str:
         """
-        Run the conversation workflow.
+        Execute the document agent's conversation flow.
         
         Args:
-            initial_input (str): Initial user input
-            system_prompt (str, optional): System prompt to guide the conversation
+            initial_input (str): The user's query to initiate the conversation
+            system_prompt (str, optional): An optional system prompt to set the conversational context
             
         Returns:
-            str: Final response
+            str: The cleaned output from the final AI-generated message
         """
-        # Initialize state
-        state = {
-            "messages": [],
-            "input": initial_input
+        # Don't cache or process "I don't know" type responses
+        if any(phrase in initial_input.lower() for phrase in ["i don't know", "i do not know", "you tell me", "tell me"]):
+            # Get the last follow-up question from the conversation
+            last_follow_up = next(
+                (msg for msg in reversed(self.conversation_memory)
+                if "follow_up" in msg),
+                None
+            )
+            if last_follow_up:
+                # Answer the follow-up question instead of treating it as a new query
+                return self._answer_follow_up(last_follow_up["question"])
+            return "I apologize, but I don't have enough context to provide a meaningful answer."
+
+        # Check cache for similar questions first
+        similar_question = self.question_cache.find_similar_question(initial_input)
+        if similar_question:
+            cached_question, cached_answer, similarity = similar_question
+            # Return the cached answer directly if similarity is high enough
+            if similarity > 0.8:  # Using the same threshold as find_similar_question
+                return cached_answer
+
+        # Use a default system prompt if none is provided
+        if system_prompt is None:
+            system_prompt = (
+                "You are a friendly and knowledgeable assistant who always communicates in a natural, conversational tone—like chatting with a friend. "
+                "Use simple, clear language and a warm, approachable style. "
+                "Rely solely on the content from the provided documents to craft your responses. "
+                "Keep the conversation going like a human would by asking questions and providing helpful information. "
+                "Engage the user by explaining the document content thoroughly and asking follow-up questions to clarify their needs. "
+                "If the context is unclear, politely ask the user for more details. "
+                "If you cannot answer based on the available document content, let the user know and invite them to rephrase or provide additional information. "
+                "Keep the conversation engaging by prompting further discussion whenever appropriate."
+            )
+
+        # Initialize the conversation state with the system prompt as the first human message
+        state: State = {
+            "input": initial_input,
+            "messages": [HumanMessage(content=system_prompt)]
         }
+
+        # Configuration settings for state graph execution
+        config = {"configurable": {"thread_id": "1"}}
+
+        # Process the conversation state through the compiled graph in streaming mode
+        for step in self.compiled_graph.stream(state, config, stream_mode="values"):
+            pass
+
+        # Retrieve the final AI message
+        final_ai_msg = next((msg for msg in reversed(state["messages"]) if isinstance(msg, AIMessage)), None)
         
-        # Add system prompt if provided
-        if system_prompt:
-            state["messages"].append(SystemMessage(content=system_prompt))
-            
-        # Run the graph
-        final_state = self.compiled_graph.invoke(state)
+        if final_ai_msg:
+            # Cache the question and answer
+            self.question_cache.add_question(initial_input, final_ai_msg.content)
+            # Store in conversation memory with document name
+            self.conversation_memory.append({
+                "question": initial_input,
+                "answer": final_ai_msg.content,
+                "document_name": "CMRPublished",  # Default document name
+                "timestamp": datetime.now().isoformat()
+            })
+            return clean_output(final_ai_msg.content)
         
-        # Return the last message
-        return final_state["messages"][-1].content
-        
+        return "No response generated."
+
     def _answer_follow_up(self, follow_up_question: str) -> str:
         """
-        Handle follow-up questions using conversation context.
+        Answer a follow-up question directly without treating it as a new query.
         
         Args:
-            follow_up_question (str): Follow-up question
+            follow_up_question (str): The follow-up question to answer
             
         Returns:
-            str: Response to follow-up question
+            str: The answer to the follow-up question
         """
-        # Get conversation context
-        context = self._get_conversation_context()
+        # Get the previous answer from conversation memory
+        previous_exchange = next(
+            (msg for msg in reversed(self.conversation_memory)
+            if not msg.get("follow_up", False)),  # Get the last non-follow-up exchange
+            None
+        )
         
-        # Generate response using context
-        messages = [
-            SystemMessage(content="You are a helpful assistant answering follow-up questions."),
-            HumanMessage(content=f"Previous conversation:\n{context}\n\nFollow-up question: {follow_up_question}")
-        ]
+        if not previous_exchange:
+            return "I apologize, but I don't have enough context to provide a meaningful answer."
+            
+        previous_answer = previous_exchange.get("answer", "")
         
-        response = self.chatbot.generate_response(messages)
-        return clean_output(response)
+        # Truncate previous answer to prevent token overflow
+        max_answer_length = 200   # words
+        answer_words = previous_answer.split()
         
+        if len(answer_words) > max_answer_length:
+            previous_answer = ' '.join(answer_words[:max_answer_length]) + '...'
+        
+        # Create a prompt to answer the follow-up question
+        prompt = f"""Answer the following follow-up question based on the previous answer.
+
+Previous Answer:
+{previous_answer}
+
+Follow-up Question:
+{follow_up_question}
+
+Guidelines:
+1. Provide a direct answer to the follow-up question
+2. Use the previous answer to support your response
+3. Keep the response concise and focused
+4. Use natural, conversational language
+5. If you can't answer based on the previous context, say so clearly
+6. Make sure your answer builds on the previous discussion
+7. Avoid repeating information from the previous answer unless relevant to the follow-up
+
+Generate a direct answer:"""
+
+        # Get the answer from the LLM
+        response = self.llm.query(prompt)
+        answer = response.content if isinstance(response, AIMessage) else str(response)
+        
+        return clean_output(answer)
+
     def engage(self, document_name: str, answer: str) -> str:
         """
-        Generate an engaging follow-up prompt.
+        Generate an engaging follow-up question based on the document context and previous answer.
         
         Args:
-            document_name (str): Name of the document
-            answer (str): Previous answer
+            document_name (str): Name of the document being discussed
+            answer (str): The previous answer to generate a follow-up for
             
         Returns:
-            str: Engaging follow-up prompt
+            str: A conversational follow-up question
         """
-        return self._generate_engaging_prompt(document_name, answer)
+        # Get document context from cache or retrieve it
+        if document_name not in self.context_cache:
+            self.context_cache[document_name] = self.rag_instance.get_document_context(document_name)
         
+        # Extract text content from document list
+        context_docs = self.context_cache[document_name]
+        context = "\n".join(doc.page_content for doc in context_docs)
+        
+        # Truncate context and answer to prevent token overflow
+        max_context_length = 300  # Increased from 200 to 300
+        max_answer_length = 400   # Increased from 300 to 400
+
+        summarized_context = summarize_text(context, max_length=400, min_length=150)  # Increased limits
+        summarized_answer = summarize_text(answer, max_length=400, min_length=150)    # Increased limits
+        
+        context_words = summarized_context.split()
+        answer_words = summarized_answer.split()
+        
+        if len(context_words) > max_context_length:
+            context = ' '.join(context_words[:max_context_length]) + '...'
+        if len(answer_words) > max_answer_length:
+            answer = ' '.join(answer_words[:max_answer_length]) + '...'
+        
+        # Create a prompt for the LLM to generate a natural follow-up
+        prompt = f"""Based on the previous answer, generate a single, natural follow-up question.
+The question should be directly related to what was just discussed.
+
+Previous Answer:
+{answer}
+
+Guidelines:
+1. Make it sound like a natural question someone would ask in conversation
+2. Use casual, everyday language
+3. Keep it short and simple
+4. Focus on an interesting aspect from the previous answer
+5. Avoid formal or academic language
+6. Don't use phrases like "as discussed" or "within this context"
+7. Don't ask about the user's experience or opinions
+8. Don't use complex terminology unless it's essential to the topic
+9. Make sure the question is directly related to the previous answer
+10. Don't introduce completely new topics
+
+Generate a single, natural follow-up question:"""
+        
+        # Get the follow-up question from the LLM
+        response = self.llm.query(prompt)
+        follow_up = response.content if isinstance(response, AIMessage) else str(response)
+        
+        # Clean up the response to make it more conversational
+        follow_up = re.sub(r'\d+\)\s*', '', follow_up)  # Remove numbered questions
+        follow_up = re.sub(r'Could you elaborate on|What specific|How does|In what ways', '', follow_up)
+        follow_up = re.sub(r'feel free to ask me follow up questions like:', '', follow_up)
+        follow_up = re.sub(r'questions like:', '', follow_up)
+        follow_up = re.sub(r'questions such as:', '', follow_up)
+        follow_up = re.sub(r'like:', '', follow_up)
+        follow_up = re.sub(r'such as:', '', follow_up)
+        follow_up = re.sub(r'for example:', '', follow_up)
+        follow_up = re.sub(r'including:', '', follow_up)
+        follow_up = re.sub(r'like', '', follow_up)
+        follow_up = re.sub(r'such as', '', follow_up)
+        follow_up = re.sub(r'for example', '', follow_up)
+        follow_up = re.sub(r'including', '', follow_up)
+        follow_up = re.sub(r'etc\.', '', follow_up)
+        follow_up = re.sub(r'etc', '', follow_up)
+        follow_up = re.sub(r'\.\.\.', '', follow_up)
+        follow_up = re.sub(r'\.\.', '', follow_up)
+        follow_up = re.sub(r'\.', '', follow_up)
+        follow_up = re.sub(r'\?', '', follow_up)
+        follow_up = re.sub(r'\s+', ' ', follow_up).strip()
+        
+        # Add a conversational prefix
+        follow_up = f"I'm curious, {follow_up}?"
+        
+        # Store the follow-up question in conversation memory
+        self.conversation_memory.append({
+            "question": follow_up,
+            "follow_up": True,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        return follow_up
+
     def answer_followup_node(self, state: State) -> dict:
         """
-        Process follow-up questions.
+        Handle follow-up questions by answering based on previous conversation context.
         
         Args:
             state (State): Current conversation state
             
         Returns:
-            dict: Updated state with follow-up response
+            dict: Updated state with the follow-up answer
         """
         messages = state["messages"]
         input_text = state["input"]
@@ -641,22 +952,56 @@ class DocumentAgent:
         
     def _determine_next_node(self, state: State) -> str:
         """
-        Determine the next node in the conversation flow.
+        Determine whether to route to retrieval or answer_followup based on the input.
+        Uses LLM to make a more nuanced decision about whether the input is a follow-up question.
         
         Args:
             state (State): Current conversation state
             
         Returns:
-            str: Next node name
+            str: Either "retrieval" or "answer_followup" based on the analysis
         """
-        messages = state["messages"]
-        last_message = messages[-1].content
+        # Get the user's input
+        user_input = state.get("input", "").lower()
         
-        # Check if this is a follow-up question
-        if "follow-up" in last_message.lower() or "more about" in last_message.lower():
-            return "answer_followup"
+        # If there's no conversation history, it's not a follow-up
+        if not self.conversation_memory:
+            return "retrieval"
             
-        return END
+        # Get the last non-follow-up exchange for context
+        last_exchange = next(
+            (msg for msg in reversed(self.conversation_memory)
+            if not msg.get("follow_up", False)),
+            None
+        )
+        
+        if not last_exchange:
+            return "retrieval"
+            
+        # Create a prompt for the LLM to analyze if this is a follow-up question
+        prompt = f"""Analyze if the following user input is a follow-up question to the previous conversation.
+Consider the context and determine if the user is asking for clarification or additional information about the previous answer.
+
+Previous Answer:
+{last_exchange.get('answer', '')}
+
+Current User Input:
+{user_input}
+
+Guidelines for determining if it's a follow-up:
+1. Is the user asking for clarification about something mentioned in the previous answer?
+2. Is the user asking for more details about a specific point from the previous answer?
+3. Is the user using phrases like "I don't know", "you tell me", or "tell me"?
+4. Is the user asking about a specific aspect mentioned in the previous answer?
+5. Is the question directly related to the previous discussion?
+
+Respond with only one word: "followup" if it's a follow-up question, or "retrieval" if it's a new question."""
+
+        # Get the LLM's decision
+        response = self.llm.query(prompt)
+        decision = response.content.strip().lower()
+        
+        return "answer_followup" if decision == "followup" else "retrieval"
 
 if __name__ == "__main__":
     # Clear cache if requested
