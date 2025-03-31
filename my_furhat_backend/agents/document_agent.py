@@ -246,14 +246,14 @@ class DocumentAgent:
         )
         
         # Initialize chatbot with optimized settings
-        chatbot_kwargs = {
-            "model_id": model_id,
-            "n_ctx": 4096,  # Reduced context window
-            "n_batch": 512,  # Increased batch size
-            "n_threads": 4,  # Optimize thread count
-            "n_gpu_layers": 32  # Use more GPU layers
-        }
-        self.chatbot = create_chatbot("llama", **chatbot_kwargs)
+        # Only pass the model_id and essential parameters
+        self.chatbot = create_chatbot(
+            "llama",
+            model_id=model_id,
+            n_ctx=4096,  # Reduced context window
+            n_batch=512,  # Increased batch size
+            n_gpu_layers=32  # Use more GPU layers
+        )
         self.llm = self.chatbot.llm
         
         print_gpu_status()
@@ -278,7 +278,6 @@ class DocumentAgent:
             self.sentiment_analyzer = pipeline(
                 "sentiment-analysis",
                 model="distilbert-base-uncased-finetuned-sst-2-english",
-                device="cuda",  # Use CUDA for sentiment analysis
                 model_kwargs={"cache_dir": config["HF_HOME"]}  # Enable model caching
             )
         except Exception as e:
