@@ -227,7 +227,7 @@ class DocumentAgent:
     The workflow is implemented as a state graph with checkpointed memory for resumption.
     """
     
-    def __init__(self, model_id: str = "mistralai/Mistral-7B-Instruct-v0.2"):
+    def __init__(self, model_id: str = "Mistral-7B-Instruct-v0.3.Q4_K_M.gguf"):
         """
         Initialize the DocumentAgent.
         
