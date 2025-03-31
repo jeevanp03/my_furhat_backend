@@ -66,7 +66,7 @@ class RAG:
         self.path_to_document = path_to_document
         
         self.vector_store = self._initialize_vector_store()
-        self.documents = self._load_documents()
+        self.documents = self.__load_docs()
         
         print_gpu_status()
         
