@@ -246,10 +246,14 @@ class DocumentAgent:
         )
         
         # Initialize chatbot with optimized settings
-        self.chatbot = create_chatbot(
-            "llama",
-            model_id=model_id,
-        )
+        chatbot_kwargs = {
+            "model_id": model_id,
+            "n_ctx": 4096,  # Reduced context window
+            "n_batch": 512,  # Increased batch size
+            "n_threads": 4,  # Optimize thread count
+            "n_gpu_layers": 32  # Use more GPU layers
+        }
+        self.chatbot = create_chatbot("llama", **chatbot_kwargs)
         self.llm = self.chatbot.llm
         
         print_gpu_status()
@@ -270,12 +274,16 @@ class DocumentAgent:
         self.max_memory_size = 10  # Increased from 5
         
         # Initialize sentiment analyzer with specific model and caching
-        self.sentiment_analyzer = pipeline(
-            "sentiment-analysis",
-            model="distilbert-base-uncased-finetuned-sst-2-english",
-            device="cuda",  # Use CUDA for sentiment analysis
-            model_kwargs={"cache_dir": config["HF_HOME"]}  # Enable model caching
-        )
+        try:
+            self.sentiment_analyzer = pipeline(
+                "sentiment-analysis",
+                model="distilbert-base-uncased-finetuned-sst-2-english",
+                device="cuda",  # Use CUDA for sentiment analysis
+                model_kwargs={"cache_dir": config["HF_HOME"]}  # Enable model caching
+            )
+        except Exception as e:
+            print(f"Error creating pipeline: {e}")
+            self.sentiment_analyzer = None
         
         # Initialize personality traits
         self.personality_traits = {
