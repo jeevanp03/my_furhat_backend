@@ -1003,6 +1003,69 @@ Respond with only one word: "followup" if it's a follow-up question, or "retriev
         
         return "answer_followup" if decision == "followup" else "retrieval"
 
+    def _generate_clarification(self, state: State) -> str:
+        """
+        Generate a clarification message when uncertainty is detected in the content.
+        
+        Args:
+            state (State): Current conversation state containing messages and context
+            
+        Returns:
+            str: A clarification message to help resolve uncertainty
+        """
+        # Get the retrieval message to analyze the content
+        retrieval_msg = next(
+            (msg for msg in state["messages"]
+            if isinstance(msg, ToolMessage) and msg.name == "document_retriever"),
+            None
+        )
+        
+        if not retrieval_msg:
+            return "I apologize, but I'm having trouble understanding the context. Could you please rephrase your question?"
+            
+        # Extract the content and user's question
+        content = retrieval_msg.content.replace("Retrieved context:\n", "").strip()
+        user_question = state.get("input", "")
+        
+        # Create a prompt for the LLM to identify the specific areas of uncertainty
+        prompt = f"""Analyze the following content and question to identify areas of uncertainty and generate a helpful clarification request.
+
+Content:
+{content}
+
+User Question:
+{user_question}
+
+Guidelines for generating clarification:
+1. Identify specific parts of the content that are unclear or ambiguous
+2. Point out any missing or incomplete information
+3. Ask for clarification in a friendly, conversational tone
+4. Focus on the most important aspects that need clarification
+5. Keep the clarification request concise and specific
+6. Use natural language that a human would use
+7. Avoid technical jargon unless necessary
+8. Make sure the clarification request is directly related to the user's question
+9. If multiple aspects need clarification, prioritize the most important ones
+10. End with an open-ended question to encourage user engagement
+
+Generate a natural clarification request:"""
+        
+        # Get the clarification from the LLM
+        response = self.llm.query(prompt)
+        clarification = response.content if isinstance(response, AIMessage) else str(response)
+        
+        # Clean up the response
+        clarification = clean_output(clarification)
+        
+        # Add a friendly prefix if not already present
+        if not any(clarification.lower().startswith(phrase) for phrase in [
+            "i'm not sure", "i'm unclear", "could you clarify",
+            "i need more information", "i'm having trouble understanding"
+        ]):
+            clarification = f"I'm not entirely sure about this, but {clarification}"
+            
+        return clarification
+
 if __name__ == "__main__":
     # Clear cache if requested
     if "--clear-cache" in sys.argv:
