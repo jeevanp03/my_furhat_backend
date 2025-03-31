@@ -46,19 +46,19 @@ from my_furhat_backend.utils.gpu_utils import print_gpu_status, clear_gpu_cache
 CACHE_DIR = config["HF_HOME"]
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-# Initialize RAG with caching
-rag_instance = RAG(
-    hf=True,
-    persist_directory=config["VECTOR_STORE_PATH"],
-    path_to_document=os.path.join(config["DOCUMENTS_PATH"], "NorwAi annual report 2023.pdf")
-)
+# # Initialize RAG with caching
+# rag_instance = RAG(
+#     hf=True,
+#     persist_directory=config["VECTOR_STORE_PATH"],
+#     path_to_document=os.path.join(config["DOCUMENTS_PATH"], "NorwAi annual report 2023.pdf")
+# )
 
-# Initialize chatbot with optimized settings
-chatbot = create_chatbot(
-    "llama",
-    model_id="Mistral-7B-Instruct-v0.3.Q4_K_M.gguf",
-)
-llm = chatbot.llm
+# # Initialize chatbot with optimized settings
+# chatbot = create_chatbot(
+#     "llama",
+#     model_id="Mistral-7B-Instruct-v0.3.Q4_K_M.gguf",
+# )
+# llm = chatbot.llm
 
 class State(TypedDict):
     """
@@ -259,10 +259,6 @@ class DocumentAgent:
         self.chatbot = create_chatbot(
             "llama",
             model_id=model_id,
-            n_ctx=4096,
-            n_batch=512,
-            n_threads=4,
-            n_gpu_layers=32
         )
         self.llm = self.chatbot.llm
         
