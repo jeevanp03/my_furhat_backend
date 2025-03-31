@@ -48,6 +48,7 @@ class RAG:
         path_to_document (str): Path to the source document
         vector_store (Chroma): The vector store instance
         documents (List[Document]): Loaded document chunks
+        embeddings: The embedding model instance
     """
 
     def __init__(self, hf: bool = True, persist_directory: str = None, path_to_document: str = None):
@@ -65,10 +66,39 @@ class RAG:
         self.persist_directory = persist_directory or config["VECTOR_STORE_PATH"]
         self.path_to_document = path_to_document
         
+        # Initialize embeddings first
+        self.embeddings = self._initialize_embeddings()
+        
+        # Then initialize vector store with the embeddings
         self.vector_store = self._initialize_vector_store()
+        
+        # Load documents and populate vector store if needed
         self.documents = self.__load_docs()
+        if self.documents:
+            self.__populate_chroma(self.vector_store)
         
         print_gpu_status()
+        
+    def _initialize_embeddings(self):
+        """
+        Initialize the embedding model.
+        
+        Returns:
+            The initialized embedding model
+        """
+        if self.hf:
+            return HuggingFaceEmbeddings(
+                model_name="sentence-transformers/all-MiniLM-L6-v2",
+                model_kwargs={'device': 'cuda'},
+                encode_kwargs={'normalize_embeddings': True}
+            )
+        else:
+            return LlamaCppEmbeddings(
+                model_path=os.path.join(config["GGUF_MODELS_PATH"], "all-MiniLM-L6-v2-Q4_K_M.gguf"),
+                n_ctx=2048,
+                n_batch=512,
+                n_gpu_layers=32
+            )
         
     def _initialize_vector_store(self) -> Chroma:
         """
@@ -77,18 +107,18 @@ class RAG:
         Returns:
             Chroma: Initialized vector store
         """
-        # Initialize embeddings with GPU support
-        embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_kwargs={'device': 'cuda'},
-            encode_kwargs={'normalize_embeddings': True}
-        )
-        
-        # Create or load the vector store
-        return Chroma(
-            persist_directory=self.persist_directory,
-            embedding_function=embeddings
-        )
+        if os.path.exists(self.persist_directory):
+            logger.info("Loading existing vector store...")
+            return Chroma(
+                persist_directory=self.persist_directory,
+                embedding_function=self.embeddings
+            )
+        else:
+            logger.info("Creating new vector store...")
+            return Chroma(
+                persist_directory=self.persist_directory,
+                embedding_function=self.embeddings
+            )
     
     def __load_docs(self) -> List[Document]:
         """
@@ -98,9 +128,16 @@ class RAG:
             List[Document]: List of Document objects loaded from the file
         """
         try:
+            logger.info(f"Attempting to load document from: {self.path_to_document}")
+            if not os.path.exists(self.path_to_document):
+                logger.error(f"Document file does not exist at: {self.path_to_document}")
+                return []
+                
             loader = PyPDFLoader(self.path_to_document)
             docs = loader.load()
-            logger.info(f"Loaded {len(docs)} document(s) from {self.path_to_document}.")
+            logger.info(f"Successfully loaded {len(docs)} document(s) from {self.path_to_document}")
+            for i, doc in enumerate(docs):
+                logger.info(f"Document {i+1} length: {len(doc.page_content)} characters")
             return docs
         except Exception as e:
             logger.error(f"Error loading documents from {self.path_to_document}: {e}")
@@ -118,9 +155,12 @@ class RAG:
             logger.error("No documents loaded; cannot perform chunking.")
             return []
             
+        logger.info("Starting document chunking...")
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         chunks = text_splitter.split_documents(docs)
-        logger.info(f"Split documents into {len(chunks)} chunk(s).")
+        logger.info(f"Successfully split documents into {len(chunks)} chunk(s)")
+        for i, chunk in enumerate(chunks):
+            logger.info(f"Chunk {i+1} length: {len(chunk.page_content)} characters")
         return chunks
     
     def __populate_chroma(self, vector_store: Chroma) -> None:
@@ -132,8 +172,12 @@ class RAG:
         """
         chunks = self.__load_and_chunk_docs()
         if chunks:
-            _ = vector_store.add_documents(documents=chunks)
-            logger.info("Populated vector store with document chunks.")
+            logger.info(f"Adding {len(chunks)} chunks to vector store...")
+            try:
+                _ = vector_store.add_documents(documents=chunks)
+                logger.info("Successfully populated vector store with document chunks")
+            except Exception as e:
+                logger.error(f"Error adding documents to vector store: {e}")
         else:
             logger.warning("No document chunks available to populate the vector store.")
         
