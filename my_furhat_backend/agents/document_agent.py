@@ -393,7 +393,7 @@ class DocumentAgent:
             return {"messages": messages}
             
         # Retrieve context from RAG
-        context = self.rag_instance.get_relevant_context(input_text)
+        context = self.rag_instance.get_document_context(input_text)
         self.context_cache[input_text] = context
         
         # Create a ToolMessage with the retrieval results
