@@ -235,8 +235,22 @@ class LlamaCcpLLM(BaseLLM):
         
         # Get the full path to the GGUF model
         model_path = os.path.join(config["GGUF_MODELS_PATH"], model_id)
+        
+        # Verify model file exists and is accessible
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"GGUF model not found at {model_path}")
+            
+        # Check file size to ensure it's not empty or corrupted
+        file_size = os.path.getsize(model_path)
+        if file_size < 1000:  # Arbitrary minimum size for a GGUF model
+            raise ValueError(f"Model file at {model_path} appears to be corrupted or incomplete (size: {file_size} bytes)")
+            
+        # Check file permissions
+        if not os.access(model_path, os.R_OK):
+            raise PermissionError(f"No read permission for model file at {model_path}")
+            
+        print(f"Loading model from: {model_path}")
+        print(f"Model file size: {file_size / (1024*1024):.2f} MB")
         
         # Set default parameters
         kwargs.setdefault("n_ctx", 10000)
@@ -252,16 +266,26 @@ class LlamaCcpLLM(BaseLLM):
         if "n_threads" not in kwargs:
             kwargs["n_threads"] = multiprocessing.cpu_count() - 1
         
-        self.chat_llm = ChatLlamaCpp(
-            model_path=model_path,
-            do_sample=True,
-            **kwargs
-        )
-        
-        if device_info["cuda_available"]:
-            self.chat_llm = move_model_to_device(self.chat_llm, device_info["device"])
-        
-        print_gpu_status()
+        try:
+            self.chat_llm = ChatLlamaCpp(
+                model_path=model_path,
+                do_sample=True,
+                **kwargs
+            )
+            
+            if device_info["cuda_available"]:
+                self.chat_llm = move_model_to_device(self.chat_llm, device_info["device"])
+            
+            print_gpu_status()
+            print("Model loaded successfully")
+            
+        except Exception as e:
+            print(f"Error loading model: {str(e)}")
+            print(f"Model path: {model_path}")
+            print(f"Model file exists: {os.path.exists(model_path)}")
+            print(f"Model file size: {os.path.getsize(model_path) if os.path.exists(model_path) else 'N/A'}")
+            print(f"Model file permissions: {oct(os.stat(model_path).st_mode)[-3:] if os.path.exists(model_path) else 'N/A'}")
+            raise
     
     def __del__(self):
         """Cleanup when the model is destroyed."""
