@@ -57,10 +57,6 @@ rag_instance = RAG(
 chatbot = create_chatbot(
     "llama",
     model_id="Mistral-7B-Instruct-v0.3.Q4_K_M.gguf",
-    n_ctx=4096,
-    n_batch=512,
-    n_threads=4,
-    n_gpu_layers=32
 )
 llm = chatbot.llm
 

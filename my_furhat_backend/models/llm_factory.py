@@ -249,12 +249,6 @@ class LlamaCcpLLM(BaseLLM):
         kwargs.setdefault("verbose", True)
         kwargs.setdefault("n_threads", 4)
         
-        # Optimize for GPU if available
-        if device_info["cuda_available"]:
-            kwargs["n_gpu_layers"] = 32
-            kwargs["n_batch"] = 512
-            kwargs["n_threads"] = 4
-        
         self.chat_llm = ChatLlamaCpp(
             model_path=model_path,
             n_threads=multiprocessing.cpu_count() - 1,
