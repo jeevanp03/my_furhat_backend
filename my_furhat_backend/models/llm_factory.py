@@ -220,16 +220,23 @@ class LlamaCcpLLM(BaseLLM):
     with GPU optimization and monitoring capabilities.
     """
     
-    def __init__(self, model_id: str = "my_furhat_backend/ggufs_models/Mistral-7B-Instruct-v0.3.Q4_K_M.gguf", **kwargs):
+    def __init__(self, model_id: str = "Mistral-7B-Instruct-v0.3.Q4_K_M.gguf", **kwargs):
         """
         Initialize the LlamaCcpLLM.
-
+        
         Args:
             model_id (str): Path to the LlamaCpp model.
             **kwargs: Additional generation parameters.
         """
+        super().__init__()
+        
         device_info = setup_gpu()
         print_gpu_status()
+        
+        # Get the full path to the GGUF model
+        model_path = os.path.join(config["GGUF_MODELS_PATH"], model_id)
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"GGUF model not found at {model_path}")
         
         # Set default parameters
         kwargs.setdefault("n_ctx", 10000)
@@ -249,13 +256,15 @@ class LlamaCcpLLM(BaseLLM):
             kwargs["n_threads"] = 4
         
         self.chat_llm = ChatLlamaCpp(
-            model_path=model_id,
+            model_path=model_path,  # Use the new path from config
             n_threads=multiprocessing.cpu_count() - 1,
             do_sample=True,
             **kwargs
         )
         
-        self.chat_llm = move_model_to_device(self.chat_llm, device_info["device"])
+        if device_info["cuda_available"]:
+            self.chat_llm = move_model_to_device(self.chat_llm, device_info["device"])
+        
         print_gpu_status()
     
     def __del__(self):
