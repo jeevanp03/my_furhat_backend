@@ -47,13 +47,13 @@ from my_furhat_backend.utils.util import (
     generate_followup_prompt,
     classify_text
 )
+
 # Initialize the FastAPI application.
 app = FastAPI()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-app = FastAPI()
 
 
 class Transcription(BaseModel):
@@ -90,6 +90,22 @@ agent = DocumentAgent()
 async def ask_question(transcription: Transcription):
     """
     Process a transcription by running it through the LLM agent synchronously and return the generated response.
+    
+    This endpoint accepts a POST request containing the transcription (user's spoken text),
+    processes it synchronously using the DocumentAgent's `run` method, and returns the generated response
+    along with metadata about the processing. The processing is offloaded to a separate thread to avoid blocking.
+    
+    Parameters:
+        transcription (Transcription): A Pydantic model instance containing the transcribed text.
+        
+    Returns:
+        dict: A JSON response containing:
+            - status: Success status
+            - response: The generated response text
+            - metadata: Processing metadata including timestamp and lengths
+            
+    Raises:
+        HTTPException: If an error occurs during processing
     """
     global latest_response
     try:
@@ -194,6 +210,24 @@ async def get_docs(transcription: Transcription):
 async def engage(engage_request: EngageRequest):
     """
     Process an engagement request by retrieving document context, generating a summary, and producing a followup prompt.
+    
+    This endpoint accepts a POST request containing a document identifier and an answer,
+    and generates an engaging follow-up prompt based on the document context and previous answer.
+    The processing is offloaded to a separate thread to avoid blocking.
+    
+    Parameters:
+        engage_request (EngageRequest): A Pydantic model instance containing:
+            - document: Identifier or content of the document
+            - answer: The previous answer to generate follow-up from
+            
+    Returns:
+        dict: A JSON response containing:
+            - status: Success status
+            - prompt: The generated follow-up prompt
+            - metadata: Processing metadata including timestamp and context information
+            
+    Raises:
+        HTTPException: If an error occurs during processing
     """
     try:
         # Get engaging prompt from document agent
