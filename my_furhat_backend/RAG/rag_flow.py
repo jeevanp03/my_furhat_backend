@@ -66,16 +66,27 @@ class RAG:
         self.persist_directory = persist_directory or config["VECTOR_STORE_PATH"]
         self.path_to_document = path_to_document
         
+        logger.info(f"Initializing RAG with:")
+        logger.info(f"- HF embeddings: {hf}")
+        logger.info(f"- Persist directory: {self.persist_directory}")
+        logger.info(f"- Document path: {self.path_to_document}")
+        
         # Initialize embeddings first
+        logger.info("Initializing embeddings...")
         self.embeddings = self._initialize_embeddings()
         
         # Then initialize vector store with the embeddings
+        logger.info("Initializing vector store...")
         self.vector_store = self._initialize_vector_store()
         
         # Load documents and populate vector store if needed
+        logger.info("Loading documents...")
         self.documents = self.__load_docs()
         if self.documents:
+            logger.info(f"Found {len(self.documents)} documents, populating vector store...")
             self.__populate_chroma(self.vector_store)
+        else:
+            logger.warning("No documents loaded, vector store will be empty")
         
         print_gpu_status()
         

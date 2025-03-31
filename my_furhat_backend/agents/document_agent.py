@@ -278,6 +278,7 @@ class DocumentAgent:
             self.sentiment_analyzer = pipeline(
                 "sentiment-analysis",
                 model="distilbert-base-uncased-finetuned-sst-2-english",
+                device="cuda",  # Specify device directly
                 model_kwargs={"cache_dir": config["HF_HOME"]}  # Enable model caching
             )
         except Exception as e:
