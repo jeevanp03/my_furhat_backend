@@ -1107,7 +1107,7 @@ if __name__ == "__main__":
         try:
         # Run the agent with the provided input.
             print("\nProcessing your query...")
-        response = agent.run(user_input)
+            response = agent.run(user_input)
             print("\nAgent:", response)
             
             # Test the engage functionality
