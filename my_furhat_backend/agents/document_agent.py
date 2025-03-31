@@ -863,11 +863,11 @@ Generate a direct answer:"""
         context = "\n".join(doc.page_content for doc in context_docs)
         
         # Truncate context and answer to prevent token overflow
-        max_context_length = 300  # Increased from 200 to 300
-        max_answer_length = 400   # Increased from 300 to 400
+        max_context_length = 300
+        max_answer_length = 400
 
-        summarized_context = summarize_text(context, max_length=400, min_length=150)  # Increased limits
-        summarized_answer = summarize_text(answer, max_length=400, min_length=150)    # Increased limits
+        summarized_context = summarize_text(context, max_length=400, min_length=150)
+        summarized_answer = summarize_text(answer, max_length=400, min_length=150)
         
         context_words = summarized_context.split()
         answer_words = summarized_answer.split()
@@ -877,26 +877,29 @@ Generate a direct answer:"""
         if len(answer_words) > max_answer_length:
             answer = ' '.join(answer_words[:max_answer_length]) + '...'
         
-        # Create a prompt for the LLM to generate a natural follow-up
-        prompt = f"""Based on the previous answer, generate a single, natural follow-up question.
-The question should be directly related to what was just discussed.
+        # Create a more sophisticated prompt for generating engaging follow-ups
+        prompt = f"""Based on the previous answer, generate a single, engaging follow-up question that will spark interesting discussion.
 
 Previous Answer:
 {answer}
 
-Guidelines:
-1. Make it sound like a natural question someone would ask in conversation
-2. Use casual, everyday language
-3. Keep it short and simple
-4. Focus on an interesting aspect from the previous answer
-5. Avoid formal or academic language
-6. Don't use phrases like "as discussed" or "within this context"
-7. Don't ask about the user's experience or opinions
-8. Don't use complex terminology unless it's essential to the topic
-9. Make sure the question is directly related to the previous answer
-10. Don't introduce completely new topics
+Guidelines for generating an engaging follow-up:
+1. Focus on the most interesting or surprising aspect of the previous answer
+2. Ask about implications, consequences, or future developments
+3. Use natural, conversational language that a human would use
+4. Make the question specific and focused
+5. Avoid generic or vague questions
+6. Don't ask about the user's experience or opinions
+7. Don't use academic or formal language
+8. Don't ask yes/no questions
+9. Don't repeat information from the previous answer
+10. Make the question thought-provoking but not too complex
+11. Use a friendly, curious tone
+12. Focus on the "why" or "how" rather than just the "what"
+13. Avoid questions that could be answered with a simple fact
+14. Make it feel like a natural continuation of the conversation
 
-Generate a single, natural follow-up question:"""
+Generate a single, engaging follow-up question:"""
         
         # Get the follow-up question from the LLM
         response = self.llm.query(prompt)
@@ -924,8 +927,15 @@ Generate a single, natural follow-up question:"""
         follow_up = re.sub(r'\?', '', follow_up)
         follow_up = re.sub(r'\s+', ' ', follow_up).strip()
         
-        # Add a conversational prefix
-        follow_up = f"I'm curious, {follow_up}?"
+        # Add a conversational prefix based on the content
+        if any(word in follow_up.lower() for word in ['interesting', 'fascinating', 'surprising']):
+            follow_up = f"That's fascinating! {follow_up}?"
+        elif any(word in follow_up.lower() for word in ['implication', 'consequence', 'impact']):
+            follow_up = f"I'm curious about the implications - {follow_up}?"
+        elif any(word in follow_up.lower() for word in ['future', 'develop', 'next']):
+            follow_up = f"Looking ahead, {follow_up}?"
+        else:
+            follow_up = f"I'm curious, {follow_up}?"
         
         # Store the follow-up question in conversation memory
         self.conversation_memory.append({
