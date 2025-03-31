@@ -70,9 +70,25 @@ class RAG:
         
         print_gpu_status()
         
-    def __del__(self):
-        """Cleanup method to clear GPU cache when the RAG instance is destroyed."""
-        clear_gpu_cache()
+    def _initialize_vector_store(self) -> Chroma:
+        """
+        Initialize the vector store with appropriate settings.
+        
+        Returns:
+            Chroma: Initialized vector store
+        """
+        # Initialize embeddings with GPU support
+        embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_kwargs={'device': 'cuda'},
+            encode_kwargs={'normalize_embeddings': True}
+        )
+        
+        # Create or load the vector store
+        return Chroma(
+            persist_directory=self.persist_directory,
+            embedding_function=embeddings
+        )
     
     def __load_docs(self) -> List[Document]:
         """
@@ -214,3 +230,7 @@ class RAG:
             base_retriever=self.vector_store.as_retriever(search_kwargs={"k": search_kwargs})
         )
         return compression_retriever.invoke(prompt)
+
+    def __del__(self):
+        """Cleanup method to clear GPU cache when the RAG instance is destroyed."""
+        clear_gpu_cache()

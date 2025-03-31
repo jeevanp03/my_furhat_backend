@@ -287,7 +287,8 @@ class DocumentAgent:
         self.sentiment_analyzer = pipeline(
             "sentiment-analysis",
             model="distilbert-base-uncased-finetuned-sst-2-english",
-            cache_dir=config["HF_HOME"]
+            cache_dir=config["HF_HOME"],
+            device="cuda"  # Use CUDA for GPU acceleration
         )
         
         # Initialize personality traits
