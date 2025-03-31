@@ -129,6 +129,11 @@ class RAG:
         """
         try:
             logger.info(f"Attempting to load document from: {self.path_to_document}")
+            logger.info(f"File exists: {os.path.exists(self.path_to_document)}")
+            if os.path.exists(self.path_to_document):
+                logger.info(f"File size: {os.path.getsize(self.path_to_document)} bytes")
+                logger.info(f"File permissions: {oct(os.stat(self.path_to_document).st_mode)[-3:]}")
+            
             if not os.path.exists(self.path_to_document):
                 logger.error(f"Document file does not exist at: {self.path_to_document}")
                 return []
@@ -138,9 +143,11 @@ class RAG:
             logger.info(f"Successfully loaded {len(docs)} document(s) from {self.path_to_document}")
             for i, doc in enumerate(docs):
                 logger.info(f"Document {i+1} length: {len(doc.page_content)} characters")
+                logger.info(f"Document {i+1} metadata: {doc.metadata}")
             return docs
         except Exception as e:
             logger.error(f"Error loading documents from {self.path_to_document}: {e}")
+            logger.error(f"Full error details: {str(e)}")
             return []
     
     def __load_and_chunk_docs(self) -> List[Document]:
