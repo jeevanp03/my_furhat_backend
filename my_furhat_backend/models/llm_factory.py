@@ -182,13 +182,14 @@ class LlamaCcpLLM(BaseLLM):
         """
         # Set default parameters for Llama Cpp if not provided
         kwargs.setdefault("n_ctx", 10000)
-        kwargs.setdefault("n_gpu_layers", 14)
+        kwargs.setdefault("n_gpu_layers", 32)  # Increased for better GPU utilization
         kwargs.setdefault("temperature", 0.1)
-        kwargs.setdefault("n_batch", 300)
+        kwargs.setdefault("n_batch", 512)  # Increased for GPU
         kwargs.setdefault("max_tokens", 700)
         kwargs.setdefault("repeat_penalty", 1.5)
         kwargs.setdefault("top_p", 0.5)
         kwargs.setdefault("verbose", True)
+        kwargs.setdefault("n_threads", 4)  # Optimize thread count
         # Create a ChatLlamaCpp instance with the specified model and system resources
         self.chat_llm = ChatLlamaCpp(
             model_path=model_id,

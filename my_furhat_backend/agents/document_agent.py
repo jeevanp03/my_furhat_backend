@@ -16,6 +16,7 @@ import uuid
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, BaseMessage, SystemMessage
 from typing_extensions import TypedDict, Annotated, List
+from my_furhat_backend.config.settings import config
 from langgraph.checkpoint.memory import MemorySaver
 import json
 from pathlib import Path
@@ -32,7 +33,27 @@ from my_furhat_backend.utils.util import clean_output, summarize_text
 # Import the RAG (Retrieval-Augmented Generation) class.
 from my_furhat_backend.RAG.rag_flow import RAG
 
-context = None
+# Create a global instance of RAG with document ingestion parameters.
+# Initialize RAG with caching
+rag_instance = RAG(
+    hf=True,
+    persist_directory=config["VECTOR_STORE_PATH"],
+    path_to_document=os.path.join(config["DOCUMENTS_PATH"], "NorwAi annual report 2023.pdf")
+)
+
+# Initialize the chatbot using a Llama model.
+# Alternative: you can specify a custom model id by uncommenting and modifying the line below.
+# chatbot = create_chatbot("llama", model_id="my_furhat_backend/ggufs_models/SmolLM2-1.7B-Instruct-Q4_K_M.gguf")
+# Initialize chatbot with optimized settings
+chatbot = create_chatbot(
+    "llama",
+    n_ctx=4096,
+    n_batch=512,
+    n_threads=4,
+    n_gpu_layers=32
+)
+llm = chatbot.llm
+
 # Define the conversation state type using TypedDict.
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], "add_messages"]
@@ -42,7 +63,7 @@ class QuestionCache:
     """
     A class to manage caching of questions and answers with similarity checking.
     """
-    def __init__(self, cache_file: str = "question_cache.json"):
+    def __init__(self, cache_file: str = os.path.join(config["TRANSFORMERS_CACHE"], "question_cache.json")):
         self.cache_file = cache_file
         # Ensure the cache file exists
         self._ensure_cache_file()
