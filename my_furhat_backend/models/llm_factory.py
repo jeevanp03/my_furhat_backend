@@ -235,7 +235,6 @@ class LlamaCcpLLM(BaseLLM):
         
         # Get the full path to the GGUF model
         model_path = os.path.join(config["GGUF_MODELS_PATH"], model_id)
-        print(f"Loading GGUF model from: {model_path}")
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"GGUF model not found at {model_path}")
         
