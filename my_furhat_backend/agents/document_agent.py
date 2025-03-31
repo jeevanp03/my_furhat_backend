@@ -664,6 +664,8 @@ if __name__ == "__main__":
     # Instantiate the DocumentAgent.
     agent = DocumentAgent()
     print("Chat with the DocumentAgent. Type 'exit' or 'quit' to stop.")
+    print("GPU Status:")
+    print_gpu_status()
 
     # Run a loop to continuously accept user input.
     while True:
@@ -674,7 +676,18 @@ if __name__ == "__main__":
             print("Exiting chat.")
             break
 
-        # Run the agent with the provided input.
-        response = agent.run(user_input)
-        print("Agent:", response)
-        print("Agent Follow-up:", agent.engage("CMRPublished", response))
+        try:
+            # Run the agent with the provided input.
+            print("\nProcessing your query...")
+            response = agent.run(user_input)
+            print("\nAgent:", response)
+            
+            # Test the engage functionality
+            print("\nGenerating follow-up...")
+            follow_up = agent.engage("CMRPublished", response)
+            print("Agent Follow-up:", follow_up)
+            
+            print("\n" + "="*50 + "\n")
+        except Exception as e:
+            print(f"\nError occurred: {str(e)}")
+            print("Please try again or type 'exit' to quit.\n")
