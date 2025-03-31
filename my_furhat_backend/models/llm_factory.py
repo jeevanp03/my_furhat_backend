@@ -225,7 +225,7 @@ class LlamaCcpLLM(BaseLLM):
         Initialize the LlamaCcpLLM.
         
         Args:
-            model_id (str): Path to the LlamaCpp model.
+            model_id (str): Name of the GGUF model file
             **kwargs: Additional generation parameters.
         """
         super().__init__()
@@ -235,6 +235,7 @@ class LlamaCcpLLM(BaseLLM):
         
         # Get the full path to the GGUF model
         model_path = os.path.join(config["GGUF_MODELS_PATH"], model_id)
+        print(f"Loading GGUF model from: {model_path}")
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"GGUF model not found at {model_path}")
         
@@ -256,7 +257,7 @@ class LlamaCcpLLM(BaseLLM):
             kwargs["n_threads"] = 4
         
         self.chat_llm = ChatLlamaCpp(
-            model_path=model_path,  # Use the new path from config
+            model_path=model_path,
             n_threads=multiprocessing.cpu_count() - 1,
             do_sample=True,
             **kwargs
