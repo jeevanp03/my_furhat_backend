@@ -26,6 +26,7 @@ from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from langchain_community.embeddings import LlamaCppEmbeddings
 from my_furhat_backend.config.settings import config
 from my_furhat_backend.utils.gpu_utils import print_gpu_status, clear_gpu_cache
+from typing import List, Dict, Optional
 
 # Set up logging configuration for the module
 logging.basicConfig(level=logging.INFO)

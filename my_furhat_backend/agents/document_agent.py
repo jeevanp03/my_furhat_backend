@@ -22,6 +22,8 @@ The workflow includes:
 import os
 import logging
 import uuid
+import shutil
+import sys
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, BaseMessage, SystemMessage
 from typing_extensions import TypedDict, Annotated, List
@@ -39,6 +41,10 @@ from my_furhat_backend.models.chatbot_factory import create_chatbot
 from my_furhat_backend.utils.util import clean_output, summarize_text
 from my_furhat_backend.RAG.rag_flow import RAG
 from my_furhat_backend.utils.gpu_utils import print_gpu_status, clear_gpu_cache
+
+# Set up cache directories
+CACHE_DIR = config["HF_HOME"]
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 # Initialize RAG with caching
 rag_instance = RAG(
@@ -84,7 +90,7 @@ class QuestionCache:
         model (SentenceTransformer): Model for computing semantic similarity
     """
     
-    def __init__(self, cache_file: str = os.path.join(config["TRANSFORMERS_CACHE"], "question_cache.json")):
+    def __init__(self, cache_file: str = os.path.join(config["HF_HOME"], "question_cache.json")):
         """
         Initialize the QuestionCache.
         
@@ -94,7 +100,7 @@ class QuestionCache:
         self.cache_file = cache_file
         self._ensure_cache_file()
         self.cache: Dict[str, Dict] = self._load_cache()
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.model = SentenceTransformer('all-MiniLM-L6-v2', cache_folder=config["HF_HOME"])
         
     def _normalize_question(self, question: str) -> str:
         """
@@ -281,8 +287,7 @@ class DocumentAgent:
         self.sentiment_analyzer = pipeline(
             "sentiment-analysis",
             model="distilbert-base-uncased-finetuned-sst-2-english",
-            device="mps",
-            model_kwargs={"cache_dir": "my_furhat_backend/cache"}  # Enable model caching
+            cache_dir=config["HF_HOME"]
         )
         
         # Initialize personality traits
@@ -661,6 +666,14 @@ class DocumentAgent:
         return END
 
 if __name__ == "__main__":
+    # Clear cache if requested
+    if "--clear-cache" in sys.argv:
+        print("Clearing cache...")
+        if os.path.exists(config["HF_HOME"]):
+            shutil.rmtree(config["HF_HOME"])
+            os.makedirs(config["HF_HOME"])
+        print("Cache cleared.")
+    
     # Instantiate the DocumentAgent.
     agent = DocumentAgent()
     print("Chat with the DocumentAgent. Type 'exit' or 'quit' to stop.")
