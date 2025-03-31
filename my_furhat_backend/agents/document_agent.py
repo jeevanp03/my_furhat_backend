@@ -249,10 +249,6 @@ class DocumentAgent:
         self.chatbot = create_chatbot(
             "llama",
             model_id=model_id,
-            n_ctx=4096,  # Reduced context window
-            n_batch=512,  # Increased batch size
-            n_threads=4,  # Optimize thread count
-            n_gpu_layers=32  # Use more GPU layers
         )
         self.llm = self.chatbot.llm
         
