@@ -611,12 +611,79 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         
         # Clean and format the response
         cleaned_response = clean_output(last_message)
+        
+        # Split into sentences and analyze content
+        sentences = cleaned_response.split('.')
+        
+        # Determine response type and adjust accordingly
+        response_type = self._analyze_response_type(cleaned_response)
+        
+        if response_type == "technical":
+            # For technical content, keep it clear but friendly
+            if len(sentences) > 2:
+                cleaned_response = '. '.join(sentences[:2]) + '.'
+            if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
+                cleaned_response = f"Well, {cleaned_response.lower()}"
+        elif response_type == "casual":
+            # For casual content, be more conversational
+            if len(sentences) > 3:
+                cleaned_response = '. '.join(sentences[:3]) + '.'
+            if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
+                cleaned_response = f"So, {cleaned_response.lower()}"
+        else:
+            # For general content, keep it balanced
+            if len(sentences) > 2:
+                cleaned_response = '. '.join(sentences[:2]) + '.'
+            if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
+                cleaned_response = f"Well, {cleaned_response.lower()}"
+        
+        # Remove common repetitive phrases
+        cleaned_response = re.sub(r'Let me think about that\.?\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'I notice you\'re interested in\.?\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'Based on the document\.?\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'According to the document\.?\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'In the document\.?\s*', '', cleaned_response)
+        
+        # Add natural conversational elements based on content
+        if any(word in cleaned_response.lower() for word in ['interesting', 'fascinating', 'surprising']):
+            cleaned_response = f"That's fascinating! {cleaned_response.lower()}"
+        elif any(word in cleaned_response.lower() for word in ['important', 'significant', 'crucial']):
+            cleaned_response = f"Actually, {cleaned_response.lower()}"
+        elif any(word in cleaned_response.lower() for word in ['complex', 'complicated', 'difficult']):
+            cleaned_response = f"You know, {cleaned_response.lower()}"
+        
         messages[-1].content = cleaned_response
         
         # Update conversation memory
         self._update_conversation_memory(state["input"], cleaned_response)
         
         return {"messages": messages}
+        
+    def _analyze_response_type(self, text: str) -> str:
+        """
+        Analyze the type of response to determine appropriate formatting.
+        
+        Args:
+            text (str): The response text to analyze
+            
+        Returns:
+            str: The type of response ('technical', 'casual', or 'general')
+        """
+        # Technical indicators
+        technical_words = {'implementation', 'algorithm', 'process', 'system', 'method', 'function', 'data', 'analysis'}
+        # Casual indicators
+        casual_words = {'cool', 'awesome', 'interesting', 'fun', 'great', 'nice', 'good', 'bad', 'wow'}
+        
+        words = set(text.lower().split())
+        technical_count = len(words.intersection(technical_words))
+        casual_count = len(words.intersection(casual_words))
+        
+        if technical_count > casual_count and technical_count > 2:
+            return "technical"
+        elif casual_count > technical_count and casual_count > 2:
+            return "casual"
+        else:
+            return "general"
         
     def _analyze_sentiment(self, text: str) -> float:
         """
@@ -748,14 +815,25 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         # Use a default system prompt if none is provided
         if system_prompt is None:
             system_prompt = (
-                "You are a friendly and knowledgeable assistant who always communicates in a natural, conversational tone—like chatting with a friend. "
-                "Use simple, clear language and a warm, approachable style. "
-                "Rely solely on the content from the provided documents to craft your responses. "
-                "Keep the conversation going like a human would by asking questions and providing helpful information. "
-                "Engage the user by explaining the document content thoroughly and asking follow-up questions to clarify their needs. "
-                "If the context is unclear, politely ask the user for more details. "
-                "If you cannot answer based on the available document content, let the user know and invite them to rephrase or provide additional information. "
-                "Keep the conversation engaging by prompting further discussion whenever appropriate."
+                "You are a friendly and knowledgeable assistant having a casual conversation. "
+                "Keep your responses concise and engaging - aim for 2-3 sentences maximum. "
+                "Use natural, conversational language and avoid formal or academic tone. "
+                "Focus on the most interesting or relevant aspects of the topic. "
+                "Don't repeat information unless necessary. "
+                "If the user seems disengaged, be more concise. "
+                "If they show interest, you can elaborate slightly. "
+                "Use contractions and casual expressions. "
+                "Avoid phrases like 'Let me think about that' or 'I notice you're interested in'. "
+                "Be direct and engaging, like chatting with a friend. "
+                "Adapt your tone based on the user's engagement level. "
+                "If they ask short questions, give short answers. "
+                "If they ask detailed questions, provide more context. "
+                "Use natural transitions between topics. "
+                "Avoid robotic or overly formal language. "
+                "Be conversational but professional. "
+                "Use appropriate humor when relevant. "
+                "Show enthusiasm for interesting topics. "
+                "Be empathetic when discussing complex or challenging topics."
             )
 
         # Initialize the conversation state with the system prompt as the first human message
@@ -862,26 +940,14 @@ Generate a direct answer:"""
         context_docs = self.context_cache[document_name]
         context = "\n".join(doc.page_content for doc in context_docs)
         
-        # Truncate context and answer to prevent token overflow
-        max_context_length = 300
-        max_answer_length = 400
-
-        summarized_context = summarize_text(context, max_length=400, min_length=150)
-        summarized_answer = summarize_text(answer, max_length=400, min_length=150)
-        
-        context_words = summarized_context.split()
-        answer_words = summarized_answer.split()
-        
-        if len(context_words) > max_context_length:
-            context = ' '.join(context_words[:max_context_length]) + '...'
-        if len(answer_words) > max_answer_length:
-            answer = ' '.join(answer_words[:max_answer_length]) + '...'
-        
         # Create a more sophisticated prompt for generating engaging follow-ups
-        prompt = f"""Based on the previous answer, generate a single, engaging follow-up question that will spark interesting discussion.
+        prompt = f"""Based on the previous answer and document context, generate a natural, engaging follow-up question.
 
 Previous Answer:
 {answer}
+
+Document Context:
+{context}
 
 Guidelines for generating an engaging follow-up:
 1. Focus on the most interesting or surprising aspect of the previous answer
@@ -898,6 +964,12 @@ Guidelines for generating an engaging follow-up:
 12. Focus on the "why" or "how" rather than just the "what"
 13. Avoid questions that could be answered with a simple fact
 14. Make it feel like a natural continuation of the conversation
+15. Consider the document context to ensure the question is relevant
+16. Keep the question concise and direct
+17. Avoid using phrases like "Let me know" or "Tell me about"
+18. Don't use multiple questions in one prompt
+19. Don't ask for examples unless specifically relevant
+20. Don't ask about personal experiences or preferences
 
 Generate a single, engaging follow-up question:"""
         
@@ -927,15 +999,27 @@ Generate a single, engaging follow-up question:"""
         follow_up = re.sub(r'\?', '', follow_up)
         follow_up = re.sub(r'\s+', ' ', follow_up).strip()
         
-        # Add a conversational prefix based on the content
+        # Add a conversational prefix based on the content and personality traits
+        curiosity_level = self.personality_traits["curiosity"]
+        empathy_level = self.personality_traits["empathy"]
+        
         if any(word in follow_up.lower() for word in ['interesting', 'fascinating', 'surprising']):
-            follow_up = f"That's fascinating! {follow_up}?"
+            if curiosity_level > 0.7:
+                follow_up = f"That's fascinating! {follow_up}?"
+            else:
+                follow_up = f"Well, {follow_up}?"
         elif any(word in follow_up.lower() for word in ['implication', 'consequence', 'impact']):
-            follow_up = f"I'm curious about the implications - {follow_up}?"
+            if empathy_level > 0.7:
+                follow_up = f"I'm curious about the implications - {follow_up}?"
+            else:
+                follow_up = f"So, {follow_up}?"
         elif any(word in follow_up.lower() for word in ['future', 'develop', 'next']):
             follow_up = f"Looking ahead, {follow_up}?"
         else:
-            follow_up = f"I'm curious, {follow_up}?"
+            if curiosity_level > 0.7:
+                follow_up = f"I'm curious, {follow_up}?"
+            else:
+                follow_up = f"Well, {follow_up}?"
         
         # Store the follow-up question in conversation memory
         self.conversation_memory.append({

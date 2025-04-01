@@ -62,17 +62,18 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
             else -> "neutral"
         }
         
-        // Signal the robot is thinking with natural gestures
-        furhat.gesture(Gestures.GazeAway)
-        furhat.say("Let me think about that...")
+        // Natural thinking gesture - only if the question is complex
+        if (userQuestion.split(" ").size > 5) {
+            furhat.gesture(Gestures.GazeAway, priority = 1)
+        }
         
-        // Call the backend /ask endpoint to get an answer.
+        // Call the backend /ask endpoint to get an answer
         val answer = callDocumentAgent(userQuestion)
         
-        // Clean up the answer by removing Q&A sections and URLs
-        val cleanAnswer = answer.split("Q1")[0]  // Take only the first part before any Q&A
-            .replace(Regex("https?://\\S+"), "")  // Remove URLs
-            .replace(Regex("\\s+"), " ")  // Normalize whitespace
+        // Clean up the answer
+        val cleanAnswer = answer.split("Q1")[0]
+            .replace(Regex("https?://\\S+"), "")
+            .replace(Regex("\\s+"), " ")
             .trim()
         
         // Store the Q&A pair for context
@@ -81,22 +82,13 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
         lastQuestion = userQuestion
         lastAnswer = cleanAnswer
         
-        // Add natural gestures while speaking
+        // Add natural gestures while speaking, but less frequently
         val currentTime = System.currentTimeMillis()
-        if (currentTime - lastGestureTime > 3000) { // Minimum 3 seconds between gestures
+        if (currentTime - lastGestureTime > 5000) { // Increased to 5 seconds between gestures
             when (userMood) {
-                "positive" -> {
-                    furhat.gesture(Gestures.Smile)
-                    furhat.gesture(Gestures.Nod)
-                }
-                "negative" -> {
-                    furhat.gesture(Gestures.ExpressSad)
-                    furhat.gesture(Gestures.Shake)
-                }
-                else -> {
-                    furhat.gesture(Gestures.Nod)
-                    furhat.gesture(Gestures.GazeAway)
-                }
+                "positive" -> furhat.gesture(Gestures.Smile, priority = 2)
+                "negative" -> furhat.gesture(Gestures.ExpressSad, priority = 2)
+                else -> furhat.gesture(Gestures.Nod, priority = 2)
             }
             lastGestureTime = currentTime
         }
@@ -110,55 +102,40 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
                 // First follow-up: Focus on specific aspects mentioned in the answer
                 val keyAspects = cleanAnswer.split(".").take(2).joinToString(" ")
                 when (userMood) {
-                    "positive" -> "I'm glad you're interested in $keyAspects! What would you like to know more about that?"
-                    "negative" -> "I understand this might be challenging. Let me explain more about $keyAspects. What would you like to know?"
-                    else -> "I notice you're interested in $keyAspects. What would you like to know more about that?"
+                    "positive" -> "What would you like to know more about?"
+                    "negative" -> "Would you like me to explain that differently?"
+                    else -> "What interests you most about that?"
                 }
             }
             conversationCount == 2 -> {
                 // Second follow-up: Connect to previous question
-                val previousTopic = previousQuestions[0].split(" ").take(3).joinToString(" ")
                 when (userMood) {
-                    "positive" -> "You asked about $previousTopic earlier. I'd love to explore how that connects to what we just discussed!"
-                    "negative" -> "You asked about $previousTopic earlier. Let me clarify how that relates to what we just discussed."
-                    else -> "You asked about $previousTopic earlier. Would you like to explore how that relates to what we just discussed?"
+                    "positive" -> "Want to explore that further?"
+                    "negative" -> "Would you like me to clarify anything?"
+                    else -> "What would you like to know more about?"
                 }
             }
             else -> {
                 // Later follow-ups: Use conversation history for context
                 try {
-                    // Try to get an engaging follow-up from the API
                     val engagePrompt = callEngageUser(documentName, cleanAnswer)
                     if (engagePrompt.isNotEmpty()) {
-                        // Modify the API response to include context and mood
-                        val context = when {
-                            previousQuestions.size >= 2 -> {
-                                val lastTwoTopics = previousQuestions.takeLast(2)
-                                when (userMood) {
-                                    "positive" -> "I'm excited to continue our discussion about ${lastTwoTopics[0]} and ${lastTwoTopics[1]}. $engagePrompt"
-                                    "negative" -> "I understand this might be complex. Let's explore how ${lastTwoTopics[0]} and ${lastTwoTopics[1]} connect. $engagePrompt"
-                                    else -> "Building on your questions about ${lastTwoTopics[0]} and ${lastTwoTopics[1]}, $engagePrompt"
-                                }
-                            }
-                            else -> engagePrompt
-                        }
-                        context
+                        // Keep the API response simple and natural
+                        engagePrompt
                     } else {
-                        // Generate contextual fallback based on conversation history and mood
-                        val recentTopics = previousQuestions.takeLast(2)
+                        // Simple fallback based on mood
                         when (userMood) {
-                            "positive" -> "I'm really enjoying our discussion about ${recentTopics.joinToString(" and ")}. What would you like to explore next?"
-                            "negative" -> "I understand this might be challenging. Let's explore ${recentTopics.joinToString(" and ")} further. What would you like to know?"
-                            else -> "I notice you're particularly interested in ${recentTopics.joinToString(" and ")}. What would you like to explore next?"
+                            "positive" -> "What would you like to explore next?"
+                            "negative" -> "Would you like me to explain something else?"
+                            else -> "What interests you most?"
                         }
                     }
                 } catch (e: Exception) {
-                    // Fallback with context from previous questions and mood
-                    val recentTopics = previousQuestions.takeLast(2)
+                    // Simple fallback based on mood
                     when (userMood) {
-                        "positive" -> "I'm really enjoying our discussion about ${recentTopics.joinToString(" and ")}. What would you like to explore next?"
-                        "negative" -> "I understand this might be challenging. Let's explore ${recentTopics.joinToString(" and ")} further. What would you like to know?"
-                        else -> "I notice you're particularly interested in ${recentTopics.joinToString(" and ")}. What would you like to explore next?"
+                        "positive" -> "What would you like to explore next?"
+                        "negative" -> "Would you like me to explain something else?"
+                        else -> "What interests you most?"
                     }
                 }
             }
@@ -166,9 +143,9 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
         
         // Ask the follow-up question with appropriate gesture
         when (userMood) {
-            "positive" -> furhat.gesture(Gestures.Smile)
-            "negative" -> furhat.gesture(Gestures.ExpressSad)
-            else -> furhat.gesture(Gestures.Nod)
+            "positive" -> furhat.gesture(Gestures.Smile, priority = 2)
+            "negative" -> furhat.gesture(Gestures.ExpressSad, priority = 2)
+            else -> furhat.gesture(Gestures.Nod, priority = 2)
         }
         furhat.ask(followUpPrompt)
     }
