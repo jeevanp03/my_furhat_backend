@@ -11,7 +11,10 @@ import org.json.JSONObject
 import java.io.IOException
 import okhttp3.*
 import furhatos.app.templateadvancedskill.params.LOCAL_BACKEND_URL
-import furhatos.app.templateadvancedskill.params.AWS_SERVER_URL
+import furhatos.app.templateadvancedskill.params.AWS_BACKEND_URL
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.util.concurrent.TimeUnit
 
 
 val DocumentWaitingToStart: State = state(parent = Parent) {
@@ -37,9 +40,12 @@ val DocumentWaitingToStart: State = state(parent = Parent) {
 
 fun callGetDocs(userInput: String): String {
     // Your FastAPI server's address (adjust if needed)
-    val url = "http://$LOCAL_BACKEND_URL:8000/get_docs"
-//    val url = "http://$AWS_SERVER_URL:8000/get_docs"
-    val client = OkHttpClient()
+    val url = "$AWS_BACKEND_URL/get_docs"
+    val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
 
     // Build JSON payload.
     val jsonBody = """{"content":"$userInput"}"""
@@ -49,13 +55,21 @@ fun callGetDocs(userInput: String): String {
         .post(body)
         .build()
 
-    client.newCall(request).execute().use { response ->
-        if (!response.isSuccessful) {
-            throw IOException("Unexpected response: $response")
+    return try {
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("Unexpected response: $response")
+            }
+            val respString = response.body?.string() ?: throw IOException("Empty response body")
+            val json = JSONObject(respString)
+            json.getString("response")
         }
-        val respString = response.body?.string() ?: throw IOException("Empty response body")
-        val json = JSONObject(respString)
-        return json.getString("response")
+    } catch (e: ConnectException) {
+        "I'm sorry, I cannot connect to the server right now. Please try again later."
+    } catch (e: SocketTimeoutException) {
+        "I'm sorry, the server is taking too long to respond. Please try again later."
+    } catch (e: Exception) {
+        "I apologize, but I encountered an error processing your request."
     }
 }
 

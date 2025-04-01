@@ -11,6 +11,7 @@ import furhatos.nlu.common.*
 import furhatos.app.templateadvancedskill.flow.Parent
 import furhatos.gestures.Gestures
 import furhatos.app.templateadvancedskill.params.LOCAL_BACKEND_URL
+import furhatos.app.templateadvancedskill.params.AWS_BACKEND_URL
 import java.util.concurrent.TimeUnit
 
 data class Transcription(val content: String)
@@ -30,7 +31,7 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
     onEntry {
         // Lock the attended user during this conversation.
         furhat.gesture(Gestures.Smile)
-        furhat.say("Hello! I'm here to help you learn about $documentName. What would you like to know?")
+        furhat.ask("Hello! I'm here to help you learn about $documentName. What would you like to know?")
     }
 
     onExit {
@@ -174,14 +175,14 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
 
     onNoResponse {
         furhat.gesture(Gestures.ExpressSad)
-        furhat.say("I didn't catch that. Could you please repeat your question?")
+        furhat.ask("I didn't catch that. Could you please repeat your question?")
         reentry()
     }
 }
 
 // Helper function to call the /ask endpoint.
 private fun callDocumentAgent(question: String): String {
-    val baseUrl = LOCAL_BACKEND_URL
+    val baseUrl = AWS_BACKEND_URL
     val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -210,7 +211,7 @@ private fun callDocumentAgent(question: String): String {
 
 // Helper function to call the /engage endpoint.
 private fun callEngageUser(documentName: String, answer: String): String {
-    val baseUrl = LOCAL_BACKEND_URL
+    val baseUrl = AWS_BACKEND_URL
     val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
