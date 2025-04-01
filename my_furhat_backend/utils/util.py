@@ -44,6 +44,7 @@ import os
 # Import necessary classes and instances from the backend.
 from my_furhat_backend.models.llm_factory import HuggingFaceLLM
 from my_furhat_backend.models.classifier import TextClassifier
+from my_furhat_backend.config.settings import config
 
 # Instantiate a summarizer using a pre-trained model for text summarization.
 summarizer = HuggingFaceLLM(
@@ -220,7 +221,7 @@ def extract_json(text: str) -> str:
     return "{}"
 
 
-def get_list_docs(folder_path: str = "my_furhat_backend/ingestion") -> list:
+def get_list_docs(folder_path: str = config["DOCUMENTS_PATH"]) -> list:
     """
     Get a list of document file names from the ingestion directory.
 

@@ -42,9 +42,6 @@ from datetime import datetime
 from my_furhat_backend.agents.document_agent import DocumentAgent
 from my_furhat_backend.utils.util import (
     get_list_docs, 
-    summarize_text, 
-    get_document_context, 
-    generate_followup_prompt,
     classify_text
 )
 
