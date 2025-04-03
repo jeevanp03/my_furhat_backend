@@ -38,12 +38,12 @@ from datetime import datetime
 from transformers import pipeline
 import re
 import torch
+import random
 
 from my_furhat_backend.models.chatbot_factory import create_chatbot
 from my_furhat_backend.utils.util import clean_output, summarize_text
 from my_furhat_backend.RAG.rag_flow import RAG
 from my_furhat_backend.utils.gpu_utils import print_gpu_status, clear_gpu_cache
-from my_furhat_backend.models.llm_factory import create_llm
 
 # Set up cache directories
 CACHE_DIR = config["HF_HOME"]
@@ -620,25 +620,25 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         response_type = self._analyze_response_type(cleaned_response)
         
         if response_type == "technical":
-            # For technical content, keep it clear but friendly
-            if len(sentences) > 2:
-                cleaned_response = '. '.join(sentences[:2]) + '.'
+            # For technical content, allow more detail
+            if len(sentences) > 5:
+                cleaned_response = '. '.join(sentences[:5]) + '.'
             if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
                 cleaned_response = f"Well, {cleaned_response.lower()}"
         elif response_type == "casual":
-            # For casual content, be more conversational
-            if len(sentences) > 3:
-                cleaned_response = '. '.join(sentences[:3]) + '.'
+            # For casual content, be more conversational but allow detail
+            if len(sentences) > 4:
+                cleaned_response = '. '.join(sentences[:4]) + '.'
             if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
                 cleaned_response = f"So, {cleaned_response.lower()}"
         else:
-            # For general content, keep it balanced
-            if len(sentences) > 2:
-                cleaned_response = '. '.join(sentences[:2]) + '.'
+            # For general content, allow more detail
+            if len(sentences) > 4:
+                cleaned_response = '. '.join(sentences[:4]) + '.'
             if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
                 cleaned_response = f"Well, {cleaned_response.lower()}"
         
-        # Remove common repetitive phrases
+        # Remove common repetitive phrases but keep informative content
         cleaned_response = re.sub(r'Let me think about that\.?\s*', '', cleaned_response)
         cleaned_response = re.sub(r'I notice you\'re interested in\.?\s*', '', cleaned_response)
         cleaned_response = re.sub(r'Based on the document\.?\s*', '', cleaned_response)
@@ -652,6 +652,13 @@ REASONING: [brief explanation of the decision, including specific reasons for or
             cleaned_response = f"Actually, {cleaned_response.lower()}"
         elif any(word in cleaned_response.lower() for word in ['complex', 'complicated', 'difficult']):
             cleaned_response = f"You know, {cleaned_response.lower()}"
+        
+        # Ensure the response has enough detail
+        if len(cleaned_response.split()) < 30:
+            # If the response is too short, add more context
+            context = self._get_conversation_context()
+            if context:
+                cleaned_response = f"{cleaned_response} {context}"
         
         messages[-1].content = cleaned_response
         
@@ -992,8 +999,8 @@ Generate a direct answer:"""
         context = "\n".join(doc.page_content for doc in context_docs)
         
         # Truncate context and answer to prevent token overflow
-        max_context_length = 1000  # words
-        max_answer_length = 500    # words
+        max_context_length = 1500  # Increased from 1000
+        max_answer_length = 750    # Increased from 500
         
         # Split into words and truncate
         context_words = context.split()
@@ -1016,24 +1023,14 @@ Document Context:
 Guidelines for generating an engaging follow-up:
 1. Focus on the most interesting or surprising aspect of the previous answer
 2. Ask about implications, consequences, or future developments
-3. Use natural, conversational language that a human would use
+3. Use natural, conversational language
 4. Make the question specific and focused
-5. Avoid generic or vague questions
-6. Don't ask about the user's experience or opinions
-7. Don't use academic or formal language
-8. Don't ask yes/no questions
-9. Don't repeat information from the previous answer
-10. Make the question thought-provoking but not too complex
-11. Use a friendly, curious tone
-12. Focus on the "why" or "how" rather than just the "what"
-13. Avoid questions that could be answered with a simple fact
-14. Make it feel like a natural continuation of the conversation
-15. Consider the document context to ensure the question is relevant
-16. Keep the question concise and direct
-17. Avoid using phrases like "Let me know" or "Tell me about"
-18. Don't use multiple questions in one prompt
-19. Don't ask for examples unless specifically relevant
-20. Don't ask about personal experiences or preferences
+5. Consider the document context to ensure relevance
+6. Keep the question concise and direct
+7. Make it feel like a natural continuation of the conversation
+8. Focus on the "why" or "how" rather than just the "what"
+9. Make the question thought-provoking but not too complex
+10. Use a friendly, curious tone
 
 Generate a single, engaging follow-up question:"""
         
@@ -1044,47 +1041,48 @@ Generate a single, engaging follow-up question:"""
             
             # Clean up the response to make it more conversational
             follow_up = re.sub(r'\d+\)\s*', '', follow_up)  # Remove numbered questions
-            follow_up = re.sub(r'Could you elaborate on|What specific|How does|In what ways', '', follow_up)
             follow_up = re.sub(r'feel free to ask me follow up questions like:', '', follow_up)
-            follow_up = re.sub(r'questions like:', '', follow_up)
-            follow_up = re.sub(r'questions such as:', '', follow_up)
-            follow_up = re.sub(r'like:', '', follow_up)
-            follow_up = re.sub(r'such as:', '', follow_up)
-            follow_up = re.sub(r'for example:', '', follow_up)
-            follow_up = re.sub(r'including:', '', follow_up)
-            follow_up = re.sub(r'like', '', follow_up)
-            follow_up = re.sub(r'such as', '', follow_up)
-            follow_up = re.sub(r'for example', '', follow_up)
-            follow_up = re.sub(r'including', '', follow_up)
-            follow_up = re.sub(r'etc\.', '', follow_up)
-            follow_up = re.sub(r'etc', '', follow_up)
-            follow_up = re.sub(r'\.\.\.', '', follow_up)
-            follow_up = re.sub(r'\.\.', '', follow_up)
-            follow_up = re.sub(r'\.', '', follow_up)
-            follow_up = re.sub(r'\?', '', follow_up)
+            follow_up = re.sub(r'questions like:|questions such as:|like:|such as:|for example:|including:', '', follow_up)
+            follow_up = re.sub(r'etc\.|etc|\.\.\.|\.\.', '', follow_up)
             follow_up = re.sub(r'\s+', ' ', follow_up).strip()
             
-            # Add a conversational prefix based on the content and personality traits
+            # Add a conversational prefix based on content and personality
             curiosity_level = self.personality_traits["curiosity"]
             empathy_level = self.personality_traits["empathy"]
             
+            # More natural and varied prefixes based on content
             if any(word in follow_up.lower() for word in ['interesting', 'fascinating', 'surprising']):
-                if curiosity_level > 0.7:
-                    follow_up = f"That's fascinating! {follow_up}?"
-                else:
-                    follow_up = f"Well, {follow_up}?"
+                prefixes = [
+                    "That's fascinating!",
+                    "I find that really interesting!",
+                    "That caught my attention!",
+                    "That's quite intriguing!"
+                ]
+                follow_up = f"{random.choice(prefixes)} {follow_up}?"
             elif any(word in follow_up.lower() for word in ['implication', 'consequence', 'impact']):
-                if empathy_level > 0.7:
-                    follow_up = f"I'm curious about the implications - {follow_up}?"
-                else:
-                    follow_up = f"So, {follow_up}?"
+                prefixes = [
+                    "I'm curious about the implications -",
+                    "That raises an interesting question -",
+                    "This makes me wonder -",
+                    "That leads me to think -"
+                ]
+                follow_up = f"{random.choice(prefixes)} {follow_up}?"
             elif any(word in follow_up.lower() for word in ['future', 'develop', 'next']):
-                follow_up = f"Looking ahead, {follow_up}?"
+                prefixes = [
+                    "Looking ahead,",
+                    "Moving forward,",
+                    "In the future,",
+                    "Going forward,"
+                ]
+                follow_up = f"{random.choice(prefixes)} {follow_up}?"
             else:
-                if curiosity_level > 0.7:
-                    follow_up = f"I'm curious, {follow_up}?"
-                else:
-                    follow_up = f"Well, {follow_up}?"
+                prefixes = [
+                    "I'm curious,",
+                    "I'd love to know,",
+                    "That makes me wonder,",
+                    "I'm interested in,"
+                ]
+                follow_up = f"{random.choice(prefixes)} {follow_up}?"
             
             # Store the follow-up question in conversation memory
             self.conversation_memory.append({
@@ -1137,6 +1135,12 @@ Generate a single, engaging follow-up question:"""
         # Get the user's input
         user_input = state.get("input", "").lower()
         
+        # Check for document name mentions
+        if any(doc.lower() in user_input for doc in self.rag_instance.get_list_docs()):
+            # Clear conversation memory when switching documents
+            self.conversation_memory = []
+            return "retrieval"
+            
         # If there's no conversation history, it's not a follow-up
         if not self.conversation_memory:
             return "retrieval"
@@ -1167,6 +1171,9 @@ Guidelines for determining if it's a follow-up:
 3. Is the user using phrases like "I don't know", "you tell me", or "tell me"?
 4. Is the user asking about a specific aspect mentioned in the previous answer?
 5. Is the question directly related to the previous discussion?
+6. Is the user asking about a different document or topic?
+7. Is the user asking for a summary or overview of the document?
+8. Is the user asking for key points or main topics?
 
 Respond with only one word: "followup" if it's a follow-up question, or "retrieval" if it's a new question."""
 
@@ -1174,6 +1181,11 @@ Respond with only one word: "followup" if it's a follow-up question, or "retriev
         response = self.llm.query(prompt)
         decision = response.content.strip().lower()
         
+        # If it's a request for key points or summary, clear memory and do retrieval
+        if any(phrase in user_input.lower() for phrase in ["key points", "main points", "summary", "overview", "talking points"]):
+            self.conversation_memory = []
+            return "retrieval"
+            
         return "answer_followup" if decision == "followup" else "retrieval"
 
     def _generate_clarification(self, state: State) -> str:
