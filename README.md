@@ -104,6 +104,7 @@ A simplified view of the repository (showing the most important directories and 
 ### Hardware Specifications
 
 The project is optimized for running on an EC2 instance with the following specifications:
+
 - Instance Type: g4dn.xlarge (or similar GPU-enabled instance)
 - GPU: NVIDIA Tesla T4
 - Memory: 16 GB
@@ -113,6 +114,7 @@ The project is optimized for running on an EC2 instance with the following speci
 ### Storage Setup
 
 The EC2 instance uses the following storage structure:
+
 ```
 /mnt/
 ├── data/
@@ -128,6 +130,7 @@ The EC2 instance uses the following storage structure:
 ### Model Management
 
 1. **Model Files:**
+
    - GGUF models are stored in `/mnt/models/gguf/`
    - Supported models include:
      - Mistral-7B-Instruct-v0.3.Q4_K_M.gguf
@@ -136,6 +139,7 @@ The EC2 instance uses the following storage structure:
      - SmolLM2-1.7B-Instruct-Q4_K_M.gguf
 
 2. **Cache Management:**
+
    - Model caches are stored in `/mnt/models/caches/`
    - To clear caches:
      ```bash
@@ -154,11 +158,13 @@ The EC2 instance uses the following storage structure:
 The project includes several GPU optimizations:
 
 1. **LLM Processing:**
+
    - Uses CUDA acceleration for model inference
    - Optimized batch processing for embeddings
    - GPU memory management with automatic cache clearing
 
 2. **RAG System:**
+
    - GPU-accelerated document embeddings
    - Optimized chunking parameters for better performance
    - Parallel processing for document chunking
@@ -469,12 +475,14 @@ There are multiple ways to test or interact with the conversation agent:
 The middleware provides several endpoints for interacting with the document agent:
 
 1. **Interactive API Documentation**
+
    - Access the Swagger UI at `http://localhost:8000/docs`
    - Access the ReDoc UI at `http://localhost:8000/redoc`
 
 2. **Using cURL Commands**
 
    a. **Ask a Question** (Synchronous):
+
    ```bash
    curl -X POST "http://localhost:8000/ask" \
         -H "Content-Type: application/json" \
@@ -482,6 +490,7 @@ The middleware provides several endpoints for interacting with the document agen
    ```
 
    b. **Transcribe** (Asynchronous):
+
    ```bash
    curl -X POST "http://localhost:8000/transcribe" \
         -H "Content-Type: application/json" \
@@ -489,11 +498,13 @@ The middleware provides several endpoints for interacting with the document agen
    ```
 
    c. **Get Response** (For async requests):
+
    ```bash
    curl "http://localhost:8000/response"
    ```
 
    d. **Get Documents**:
+
    ```bash
    curl -X POST "http://localhost:8000/get_docs" \
         -H "Content-Type: application/json" \
@@ -501,6 +512,7 @@ The middleware provides several endpoints for interacting with the document agen
    ```
 
    e. **Engage** (Generate follow-up):
+
    ```bash
    curl -X POST "http://localhost:8000/engage" \
         -H "Content-Type: application/json" \
@@ -567,18 +579,21 @@ The middleware provides several endpoints for interacting with the document agen
 ### Key Components
 
 1. **Document Agent**
+
    - Handles document ingestion and RAG-based conversations
    - Uses GPU-accelerated embeddings for efficient retrieval
    - Implements state-graph-based conversation flow
    - Generates natural follow-up questions
 
 2. **RAG System**
+
    - Efficient document chunking with optimized parameters
    - GPU-accelerated embeddings using HuggingFace or LlamaCpp
    - Chroma vector store for fast similarity search
    - Cross-encoder reranking for improved relevance
 
 3. **LLM Integration**
+
    - Support for multiple GGUF models
    - GPU-accelerated inference
    - Optimized memory management
@@ -593,17 +608,20 @@ The middleware provides several endpoints for interacting with the document agen
 ### Notes
 
 1. **GPU Usage**
+
    - Monitor GPU memory usage with `nvidia-smi`
    - Clear GPU cache when needed using the provided utilities
    - Adjust batch sizes based on available GPU memory
 
 2. **Performance Optimization**
+
    - Use appropriate chunk sizes for document processing
    - Monitor vector store size and performance
    - Clear caches periodically to prevent memory issues
    - Use batch processing for large document sets
 
 3. **Error Handling**
+
    - Check GPU memory before large operations
    - Monitor vector store integrity
    - Handle model loading errors gracefully
@@ -620,6 +638,7 @@ The middleware provides several endpoints for interacting with the document agen
 ## Managing Caches
 
 The system uses several types of caches to improve performance:
+
 - Question cache: Stores previously asked questions and answers
 - Context cache: Stores document context for faster retrieval
 - GPU cache: Stores model weights and computations
@@ -657,29 +676,39 @@ agent.clear_all_caches()
 You can also manually clear the caches by:
 
 1. Deleting the cache files:
+
    ```bash
    rm -rf /mnt/models/caches/huggingface/question_cache.json
    ```
 
 2. Clearing GPU cache:
+
    ```python
    import torch
    torch.cuda.empty_cache()
    ```
 
 3. Restarting the FastAPI server:
+
    ```bash
    # Stop the current server
    pkill -f "uvicorn middleware.main:app"
-   
+
    # Start a new server
    uvicorn middleware.main:app --host 0.0.0.0 --port 8000
    ```
 
 Note: Caches are automatically cleared when:
+
 - The context window is exceeded
 - Processing errors occur
 - The server is restarted
+
+#### 4. Command Line Cache Clearing
+
+```bash
+python -c "from my_furhat_backend.agents.document_agent import DocumentAgent; agent = DocumentAgent(); agent.clear_all_caches()"
+```
 
 ---
 
