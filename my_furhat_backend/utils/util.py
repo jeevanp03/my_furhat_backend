@@ -26,12 +26,6 @@ Functions:
 
     summarize_text(text: str, max_length: int = 150, min_length: int = 30) -> str
         Summarizes the input text using a pre-trained summarization model.
-
-    get_document_context(document: str) -> str
-        Retrieves the context of a document from the DocumentAgent based on the document's title.
-
-    generate_followup_prompt(summary: str) -> str
-        Generates a follow-up prompt for the assistant based on the provided summary.
     
     classify_text(content: str, docs: list) -> dict
         Ranks a list of documents based on their similarity to the provided content using a text classifier.
@@ -40,7 +34,6 @@ Functions:
 import re
 import json
 import os
-import torch
 
 # Import necessary classes and instances from the backend.
 from my_furhat_backend.models.llm_factory import HuggingFaceLLM
