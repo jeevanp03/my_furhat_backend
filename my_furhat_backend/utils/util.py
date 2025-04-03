@@ -40,6 +40,7 @@ Functions:
 import re
 import json
 import os
+import torch
 
 # Import necessary classes and instances from the backend.
 from my_furhat_backend.models.llm_factory import HuggingFaceLLM
@@ -244,9 +245,9 @@ def get_list_docs(folder_path: str = config["DOCUMENTS_PATH"]) -> list:
 
 def summarize_text(text: str, max_length: int = 150, min_length: int = 30) -> str:
     """
-    Summarize the given text using the LLM.
-
-    Parameters:
+    Summarize the given text using the pre-trained summarization model.
+    
+    Args:
         text (str): The text to summarize.
         max_length (int): Maximum length of the summary in words. Defaults to 150.
         min_length (int): Minimum length of the summary in words. Defaults to 30.
@@ -257,33 +258,48 @@ def summarize_text(text: str, max_length: int = 150, min_length: int = 30) -> st
     if not text:
         return ""
         
-    # Split into sentences
-    sentences = text.split('.')
-    
-    # If text is shorter than max_length, return as is
-    if len(text.split()) <= max_length:
-        return text
+    try:
+        # Split text into chunks if it's too long for the model
+        max_chunk_length = 1024
+        chunks = [text[i:i+max_chunk_length] for i in range(0, len(text), max_chunk_length)]
         
-    # Initialize summary
-    summary = []
-    current_length = 0
-    
-    # Add sentences until we reach max_length
-    for sentence in sentences:
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-            
-        sentence_length = len(sentence.split())
+        summaries = []
+        for chunk in chunks:
+            # Generate summary for each chunk using the existing summarizer
+            summary = summarizer.query(chunk)
+            summaries.append(summary)
         
-        # If adding this sentence would exceed max_length, stop
-        if current_length + sentence_length > max_length:
-            break
+        # Combine summaries if there were multiple chunks
+        if len(summaries) > 1:
+            # Use the summarizer again to combine the chunk summaries
+            combined_summary = summarizer.query(' '.join(summaries))
+            return combined_summary
+        else:
+            return summaries[0]
             
-        summary.append(sentence)
-        current_length += sentence_length
-    
-    return '. '.join(summary) + '.'
+    except Exception as e:
+        print(f"Error in summarization: {str(e)}")
+        # Fallback to basic sentence-based summarization
+        sentences = text.split('.')
+        if len(text.split()) <= max_length:
+            return text
+            
+        summary = []
+        current_length = 0
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            sentence_length = len(sentence.split())
+            if current_length + sentence_length > max_length:
+                break
+                
+            summary.append(sentence)
+            current_length += sentence_length
+            
+        return '. '.join(summary) + '.'
 
 
 def classify_text(content: str, docs: list) -> dict:
