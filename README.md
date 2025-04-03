@@ -40,6 +40,11 @@ It includes **FastAPI** endpoints for synchronous/asynchronous interaction, **La
       - [1. Interactive API Documentation](#1-interactive-api-documentation)
       - [2. Using cURL Commands](#2-using-curl-commands)
       - [3. Using a Python Script with Requests](#3-using-a-python-script-with-requests)
+  - [Managing Caches](#managing-caches)
+    - [Clearing All Caches](#clearing-all-caches)
+      - [1. Using the API Endpoint](#1-using-the-api-endpoint)
+      - [2. Using Python Script](#2-using-python-script)
+      - [3. Manual Cache Clearing](#3-manual-cache-clearing)
   - [Managing Dependencies with Poetry and pip](#managing-dependencies-with-poetry-and-pip)
     - [Activating the Poetry Environment](#activating-the-poetry-environment)
     - [Additional Troubleshooting Steps](#additional-troubleshooting-steps)
@@ -609,6 +614,72 @@ The middleware provides several endpoints for interacting with the document agen
    - Protect sensitive document content
    - Implement rate limiting
    - Monitor system resources
+
+---
+
+## Managing Caches
+
+The system uses several types of caches to improve performance:
+- Question cache: Stores previously asked questions and answers
+- Context cache: Stores document context for faster retrieval
+- GPU cache: Stores model weights and computations
+- Conversation memory: Stores recent conversation history
+- Summary cache: Stores document summaries
+
+### Clearing All Caches
+
+There are several ways to clear the caches:
+
+#### 1. Using the API Endpoint
+
+You can clear all caches by making a POST request to the `/clear_caches` endpoint:
+
+```bash
+curl -X POST http://localhost:8000/clear_caches
+```
+
+#### 2. Using Python Script
+
+You can clear caches programmatically using the `DocumentAgent` class:
+
+```python
+from my_furhat_backend.agents.document_agent import DocumentAgent
+
+# Initialize the agent
+agent = DocumentAgent()
+
+# Clear all caches
+agent.clear_all_caches()
+```
+
+#### 3. Manual Cache Clearing
+
+You can also manually clear the caches by:
+
+1. Deleting the cache files:
+   ```bash
+   rm -rf /mnt/models/caches/huggingface/question_cache.json
+   ```
+
+2. Clearing GPU cache:
+   ```python
+   import torch
+   torch.cuda.empty_cache()
+   ```
+
+3. Restarting the FastAPI server:
+   ```bash
+   # Stop the current server
+   pkill -f "uvicorn middleware.main:app"
+   
+   # Start a new server
+   uvicorn middleware.main:app --host 0.0.0.0 --port 8000
+   ```
+
+Note: Caches are automatically cleared when:
+- The context window is exceeded
+- Processing errors occur
+- The server is restarted
 
 ---
 
