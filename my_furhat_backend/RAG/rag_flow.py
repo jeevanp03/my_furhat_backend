@@ -296,3 +296,28 @@ class RAG:
     def __del__(self):
         """Cleanup method to clear GPU cache when the RAG instance is destroyed."""
         clear_gpu_cache()
+
+    def get_list_docs(self) -> List[str]:
+        """
+        Get a list of all available documents in the vector store.
+        
+        Returns:
+            List[str]: List of document names/identifiers
+        """
+        try:
+            # Get all documents from the vector store
+            if not self.vector_store:
+                self.vector_store = self.__load_db()
+            
+            # Get unique document names from metadata
+            doc_names = set()
+            for doc in self.vector_store.get()["metadatas"]:
+                if "source" in doc:
+                    doc_name = os.path.basename(doc["source"])
+                    doc_names.add(doc_name)
+            
+            return list(doc_names)
+            
+        except Exception as e:
+            logger.error(f"Error getting document list: {e}")
+            return []
