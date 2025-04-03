@@ -15,7 +15,6 @@ Functions:
 
 from abc import ABC, abstractmethod
 import multiprocessing
-from langchain_huggingface import HuggingFacePipeline
 from langchain_community.chat_models import ChatLlamaCpp
 from my_furhat_backend.config.settings import config
 from my_furhat_backend.utils.gpu_utils import setup_gpu, move_model_to_device, print_gpu_status, clear_gpu_cache
@@ -62,81 +61,64 @@ class HuggingFaceLLM(BaseLLM):
     
     def __init__(self, model_id: str, task: str = "text-generation", **kwargs):
         """
-        Initialize the HuggingFaceLLM.
-
-        Args:
-            model_id (str): The ID of the model to use.
-            task (str): The task type (default: "text-generation").
-            **kwargs: Additional parameters for the model.
-        """
-        # Set up GPU and get device info
-        device_info = setup_gpu()
-        print_gpu_status()  # Print initial GPU status
+        Initialize the HuggingFace LLM with optimized settings.
         
+        Args:
+            model_id (str): The model identifier from HuggingFace
+            task (str): The task type (default: "text-generation")
+            **kwargs: Additional arguments for model configuration
+        """
         self.model_id = model_id
         self.task = task
-        self.kwargs = kwargs
+        self.device_info = setup_gpu()
         
-        # Set default generation parameters if not provided
-        self.kwargs.setdefault("max_new_tokens", 512)
-        self.kwargs.setdefault("temperature", 0.7)
-        self.kwargs.setdefault("top_p", 0.9)
-        self.kwargs.setdefault("do_sample", True)
-        self.kwargs.setdefault("max_length", 1024)
+        # Optimize model loading
+        self.model_kwargs = {
+            "device_map": "auto",  # Automatically handle device placement
+            "torch_dtype": torch.float16,  # Use half precision
+            "low_cpu_mem_usage": True,  # Optimize CPU memory usage
+            "load_in_8bit": True,  # Use 8-bit quantization
+            "max_memory": {0: "16GB"} if self.device_info["cuda_available"] else None
+        }
         
-        # Optimize for GPU if available
-        if device_info["cuda_available"]:
-            self.kwargs["device"] = 0
-            self.kwargs["torch_dtype"] = torch.float16
-            self.kwargs["low_cpu_mem_usage"] = True
+        # Update with any additional kwargs
+        self.model_kwargs.update(kwargs)
         
-        # Initialize the API URL and headers
-        self.api_url = f"https://api-inference.huggingface.co/models/{model_id}"
-        self.headers = {"Authorization": f"Bearer {os.getenv('HUGGINGFACE_API_KEY')}"}
+        # Create the pipeline with optimized settings
+        self.__create_pipeline()
         
-        # Create the appropriate pipeline based on task
-        self.llm = self.__create_pipeline()
-        
-        # Move model to appropriate device if possible
-        if self.llm:
-            self.llm = move_model_to_device(self.llm, device_info["device"])
-        
-        # Print final GPU status after initialization
-        print_gpu_status()
-    
     def __del__(self):
         """Cleanup when the model is destroyed."""
         clear_gpu_cache()
     
     def __create_pipeline(self):
-        """
-        Create the appropriate pipeline based on the task type.
-        
-        Returns:
-            Pipeline: The created pipeline or None if creation fails.
-        """
+        """Create the HuggingFace pipeline with optimized settings."""
         try:
-            if self.task == "text-generation":
-                return pipeline(
-                    "text-generation",
-                    model=self.model_id,
-                    tokenizer=self.model_id,
-                    device=0 if torch.cuda.is_available() else -1,
-                    **self.kwargs
-                )
-            elif self.task == "summarization":
-                return pipeline(
-                    "summarization",
-                    model=self.model_id,
-                    tokenizer=self.model_id,
-                    device=0 if torch.cuda.is_available() else -1,
-                    **self.kwargs
-                )
-            else:
-                raise ValueError(f"Unsupported task type: {self.task}")
+            # Clear GPU cache before loading
+            clear_gpu_cache()
+            
+            # Create the pipeline with optimized settings
+            self.pipeline = pipeline(
+                task=self.task,
+                model=self.model_id,
+                **self.model_kwargs
+            )
+            
+            # Move model to GPU if available
+            if self.device_info["cuda_available"]:
+                self.pipeline = move_model_to_device(self.pipeline, self.device_info["device"])
+            
+            print_gpu_status()
+            
         except Exception as e:
             print(f"Error creating pipeline: {e}")
-            return None
+            # Fallback to CPU if GPU fails
+            self.model_kwargs["device_map"] = "cpu"
+            self.pipeline = pipeline(
+                task=self.task,
+                model=self.model_id,
+                **self.model_kwargs
+            )
     
     def __truncate_input(self, prompt: str) -> str:
         """
@@ -149,11 +131,11 @@ class HuggingFaceLLM(BaseLLM):
             str: The truncated prompt.
         """
         try:
-            tokenizer = self.llm.tokenizer if self.llm else None
+            tokenizer = self.pipeline.tokenizer if self.pipeline else None
             if not tokenizer:
                 return prompt
                 
-            tokens = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=self.kwargs["max_length"])
+            tokens = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=self.model_kwargs["max_length"])
             return tokenizer.decode(tokens["input_ids"][0])
         except Exception as e:
             print(f"Error truncating input: {e}")
@@ -161,46 +143,63 @@ class HuggingFaceLLM(BaseLLM):
     
     def query(self, prompt: str) -> str:
         """
-        Query the model with the given prompt.
-
+        Process a query with optimized inference parameters.
+        
         Args:
-            prompt (str): The input prompt.
-
+            prompt (str): The input text or prompt to be processed.
+            
         Returns:
-            str: The model's response.
+            str: The generated response from the language model.
         """
         try:
-            clear_gpu_cache()
-            print_gpu_status()
-            
+            # Truncate input to prevent OOM errors
             truncated_prompt = self.__truncate_input(prompt)
             
-            if self.llm:
-                result = self.llm(truncated_prompt, **self.kwargs)
-                if isinstance(result, list) and len(result) > 0:
-                    if isinstance(result[0], dict):
-                        return result[0].get("generated_text", "")
-                    return result[0]
-                return str(result)
-            else:
-                response = requests.post(
-                    self.api_url,
-                    headers=self.headers,
-                    json={"inputs": truncated_prompt, **self.kwargs}
+            if self.pipeline:
+                # Optimize generation parameters
+                generation_config = {
+                    "max_new_tokens": 256,  # Reduced from 512
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "do_sample": True,
+                    "num_beams": 1,  # Use greedy decoding for speed
+                    "pad_token_id": self.pipeline.tokenizer.eos_token_id,
+                    "use_cache": True,  # Enable KV cache
+                    "return_dict_in_generate": True
+                }
+                
+                # Generate response with optimized parameters
+                result = self.pipeline(
+                    truncated_prompt,
+                    **generation_config
                 )
-                response.raise_for_status()
-                result = response.json()
                 
                 if isinstance(result, list) and len(result) > 0:
                     if isinstance(result[0], dict):
-                        return result[0].get("generated_text", "")
+                        return result[0]["generated_text"]
                     return result[0]
                 return str(result)
+            else:
+                # Fallback to API if pipeline fails
+                response = requests.post(
+                    f"https://api-inference.huggingface.co/models/{self.model_id}",
+                    headers={"Authorization": f"Bearer {os.getenv('HUGGINGFACE_API_KEY')}"},
+                    json={
+                        "inputs": truncated_prompt,
+                        "parameters": {
+                            "max_new_tokens": 256,
+                            "temperature": 0.7,
+                            "top_p": 0.9,
+                            "do_sample": True
+                        }
+                    }
+                )
+                response.raise_for_status()
+                return response.json()[0]["generated_text"]
+                
         except Exception as e:
             print(f"Error in query: {e}")
-            return ""
-        finally:
-            print_gpu_status()
+            return f"Error processing query: {str(e)}"
 
     def bind_tools(self, tools: list, tool_schema: dict | str = None) -> None:
         """
