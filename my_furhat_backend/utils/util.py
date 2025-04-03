@@ -23,9 +23,6 @@ Functions:
     
     get_list_docs(folder_path: str = "my_furhat_backend/ingestion") -> list
         Returns a list of file names (without extensions) found in the specified ingestion directory.
-
-    summarize_text(text: str, max_length: int = 150, min_length: int = 30) -> str
-        Summarizes the input text using a pre-trained summarization model.
     
     classify_text(content: str, docs: list) -> dict
         Ranks a list of documents based on their similarity to the provided content using a text classifier.
@@ -36,22 +33,9 @@ import json
 import os
 
 # Import necessary classes and instances from the backend.
-from my_furhat_backend.models.llm_factory import HuggingFaceLLM
 from my_furhat_backend.models.classifier import TextClassifier
 from my_furhat_backend.config.settings import config
 
-# Instantiate a summarizer using a pre-trained model for text summarization.
-summarizer = HuggingFaceLLM(
-    model_id="sshleifer/distilbart-cnn-12-6",
-    task="summarization",
-    max_length=1024,
-    max_new_tokens=100,
-    temperature=0.7,
-    top_p=0.9,
-    do_sample=True,
-    min_length=30,
-    no_repeat_ngram_size=3
-)
 text_classifier = TextClassifier()
 
 
@@ -234,65 +218,6 @@ def get_list_docs(folder_path: str = config["DOCUMENTS_PATH"]) -> list:
         for entry in os.scandir(folder_path)
         if entry.is_file()
     ]
-
-
-def summarize_text(text: str, max_length: int = 150, min_length: int = 30) -> str:
-    """
-    Summarize the given text using the pre-trained summarization model.
-    
-    Args:
-        text (str): The text to summarize.
-        max_length (int): Maximum length of the summary in words. Defaults to 150.
-        min_length (int): Minimum length of the summary in words. Defaults to 30.
-
-    Returns:
-        str: The summarized text.
-    """
-    if not text:
-        return ""
-        
-    try:
-        # Split text into chunks if it's too long for the model
-        max_chunk_length = 1024
-        chunks = [text[i:i+max_chunk_length] for i in range(0, len(text), max_chunk_length)]
-        
-        summaries = []
-        for chunk in chunks:
-            # Generate summary for each chunk using the existing summarizer
-            summary = summarizer.query(chunk)
-            summaries.append(summary)
-        
-        # Combine summaries if there were multiple chunks
-        if len(summaries) > 1:
-            # Use the summarizer again to combine the chunk summaries
-            combined_summary = summarizer.query(' '.join(summaries))
-            return combined_summary
-        else:
-            return summaries[0]
-            
-    except Exception as e:
-        print(f"Error in summarization: {str(e)}")
-        # Fallback to basic sentence-based summarization
-        sentences = text.split('.')
-        if len(text.split()) <= max_length:
-            return text
-            
-        summary = []
-        current_length = 0
-        
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence:
-                continue
-                
-            sentence_length = len(sentence.split())
-            if current_length + sentence_length > max_length:
-                break
-                
-            summary.append(sentence)
-            current_length += sentence_length
-            
-        return '. '.join(summary) + '.'
 
 
 def classify_text(content: str, docs: list) -> dict:

@@ -41,9 +41,10 @@ import torch
 import random
 
 from my_furhat_backend.models.chatbot_factory import create_chatbot
-from my_furhat_backend.utils.util import clean_output, summarize_text
+from my_furhat_backend.utils.util import clean_output
 from my_furhat_backend.RAG.rag_flow import RAG
 from my_furhat_backend.utils.gpu_utils import print_gpu_status, clear_gpu_cache
+from my_furhat_backend.models.llm_factory import HuggingFaceLLM
 
 # Set up cache directories
 CACHE_DIR = config["HF_HOME"]
@@ -257,6 +258,19 @@ class DocumentAgent:
         )
         self.llm = self.chatbot.llm
         
+        # Initialize summarizer
+        self.summarizer = HuggingFaceLLM(
+            model_id="sshleifer/distilbart-cnn-12-6",
+            task="summarization",
+            max_length=1024,
+            max_new_tokens=100,
+            temperature=0.7,
+            top_p=0.9,
+            do_sample=True,
+            min_length=30,
+            no_repeat_ngram_size=3
+        )
+        
         print_gpu_status()
         
         self.graph = StateGraph(State)
@@ -439,12 +453,8 @@ class DocumentAgent:
             if content_hash in self.summary_cache:
                 summarized_text = self.summary_cache[content_hash]
             else:
-                # Generate a summary of the retrieved content
-                summarized_text = summarize_text(
-                    text_to_summarize,
-                    max_length=800,  # Increased from 400
-                    min_length=100   # Increased from 50
-                )
+                # Generate a summary of the retrieved content using the summarizer
+                summarized_text = self.summarizer.query(text_to_summarize)
                 # Cache the summary
                 self.summary_cache[content_hash] = summarized_text
                 
