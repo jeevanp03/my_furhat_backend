@@ -619,6 +619,16 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         # Determine response type and adjust accordingly
         response_type = self._analyze_response_type(cleaned_response)
         
+        # Ensure minimum response length
+        if len(cleaned_response.split()) < 10:
+            # If response is too short, add more context
+            context = self._get_conversation_context()
+            if context:
+                cleaned_response = f"{cleaned_response} {context}"
+            else:
+                # If no context available, add a follow-up question
+                cleaned_response = f"{cleaned_response} Would you like me to elaborate on any specific aspect?"
+        
         if response_type == "technical":
             # For technical content, allow more detail
             if len(sentences) > 5:
@@ -659,6 +669,9 @@ REASONING: [brief explanation of the decision, including specific reasons for or
             context = self._get_conversation_context()
             if context:
                 cleaned_response = f"{cleaned_response} {context}"
+            else:
+                # If no context available, add a follow-up question
+                cleaned_response = f"{cleaned_response} Would you like me to elaborate on any specific aspect?"
         
         messages[-1].content = cleaned_response
         
