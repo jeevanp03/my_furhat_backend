@@ -37,6 +37,7 @@ from typing import Dict, Tuple, Optional
 from datetime import datetime
 from transformers import pipeline
 import re
+import torch
 
 from my_furhat_backend.models.chatbot_factory import create_chatbot
 from my_furhat_backend.utils.util import clean_output, summarize_text
@@ -780,6 +781,33 @@ REASONING: [brief explanation of the decision, including specific reasons for or
             context += f"Q: {exchange['question']}\nA: {exchange['answer']}\n"
         return context
     
+    def clear_all_caches(self) -> None:
+        """
+        Clear all caches including question cache, context cache, and GPU cache.
+        """
+        # Clear question cache file
+        if os.path.exists(self.question_cache.cache_file):
+            os.remove(self.question_cache.cache_file)
+            self.question_cache.cache = {}
+            print("Question cache cleared")
+        
+        # Clear context cache
+        self.context_cache.clear()
+        print("Context cache cleared")
+        
+        # Clear GPU cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print("GPU cache cleared")
+        
+        # Clear conversation memory
+        self.conversation_memory.clear()
+        print("Conversation memory cleared")
+        
+        # Clear summary cache
+        self.summary_cache.clear()
+        print("Summary cache cleared")
+
     def run(self, initial_input: str, system_prompt: str = None) -> str:
         """
         Execute the document agent's conversation flow.
@@ -791,80 +819,103 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         Returns:
             str: The cleaned output from the final AI-generated message
         """
-        # Don't cache or process "I don't know" type responses
-        if any(phrase in initial_input.lower() for phrase in ["i don't know", "i do not know", "you tell me", "tell me"]):
-            # Get the last follow-up question from the conversation
-            last_follow_up = next(
-                (msg for msg in reversed(self.conversation_memory)
-                if "follow_up" in msg),
-                None
-            )
-            if last_follow_up:
-                # Answer the follow-up question instead of treating it as a new query
-                return self._answer_follow_up(last_follow_up["question"])
-            return "I apologize, but I don't have enough context to provide a meaningful answer."
+        try:
+            # Truncate input if too long
+            max_input_length = 500  # words
+            input_words = initial_input.split()
+            if len(input_words) > max_input_length:
+                initial_input = ' '.join(input_words[:max_input_length]) + '...'
 
-        # Check cache for similar questions first
-        similar_question = self.question_cache.find_similar_question(initial_input)
-        if similar_question:
-            cached_question, cached_answer, similarity = similar_question
-            # Return the cached answer directly if similarity is high enough
-            if similarity > 0.8:  # Using the same threshold as find_similar_question
-                return cached_answer
+            # Don't cache or process "I don't know" type responses
+            if any(phrase in initial_input.lower() for phrase in ["i don't know", "i do not know", "you tell me", "tell me"]):
+                # Get the last follow-up question from the conversation
+                last_follow_up = next(
+                    (msg for msg in reversed(self.conversation_memory)
+                    if "follow_up" in msg),
+                    None
+                )
+                if last_follow_up:
+                    # Answer the follow-up question instead of treating it as a new query
+                    return self._answer_follow_up(last_follow_up["question"])
+                return "I apologize, but I don't have enough context to provide a meaningful answer."
 
-        # Use a default system prompt if none is provided
-        if system_prompt is None:
-            system_prompt = (
-                "You are a friendly and knowledgeable assistant having a casual conversation. "
-                "Keep your responses concise and engaging - aim for 2-3 sentences maximum. "
-                "Use natural, conversational language and avoid formal or academic tone. "
-                "Focus on the most interesting or relevant aspects of the topic. "
-                "Don't repeat information unless necessary. "
-                "If the user seems disengaged, be more concise. "
-                "If they show interest, you can elaborate slightly. "
-                "Use contractions and casual expressions. "
-                "Avoid phrases like 'Let me think about that' or 'I notice you're interested in'. "
-                "Be direct and engaging, like chatting with a friend. "
-                "Adapt your tone based on the user's engagement level. "
-                "If they ask short questions, give short answers. "
-                "If they ask detailed questions, provide more context. "
-                "Use natural transitions between topics. "
-                "Avoid robotic or overly formal language. "
-                "Be conversational but professional. "
-                "Use appropriate humor when relevant. "
-                "Show enthusiasm for interesting topics. "
-                "Be empathetic when discussing complex or challenging topics."
-            )
+            # Check cache for similar questions first
+            similar_question = self.question_cache.find_similar_question(initial_input)
+            if similar_question:
+                cached_question, cached_answer, similarity = similar_question
+                # Return the cached answer directly if similarity is high enough
+                if similarity > 0.8:  # Using the same threshold as find_similar_question
+                    return cached_answer
 
-        # Initialize the conversation state with the system prompt as the first human message
-        state: State = {
-            "input": initial_input,
-            "messages": [HumanMessage(content=system_prompt)]
-        }
+            # Use a default system prompt if none is provided
+            if system_prompt is None:
+                system_prompt = (
+                    "You are a friendly and knowledgeable assistant having a casual conversation. "
+                    "Keep your responses concise and engaging - aim for 2-3 sentences maximum. "
+                    "Use natural, conversational language and avoid formal or academic tone. "
+                    "Focus on the most interesting or relevant aspects of the topic. "
+                    "Don't repeat information unless necessary. "
+                    "If the user seems disengaged, be more concise. "
+                    "If they show interest, you can elaborate slightly. "
+                    "Use contractions and casual expressions. "
+                    "Avoid phrases like 'Let me think about that' or 'I notice you're interested in'. "
+                    "Be direct and engaging, like chatting with a friend. "
+                    "Adapt your tone based on the user's engagement level. "
+                    "If they ask short questions, give short answers. "
+                    "If they ask detailed questions, provide more context. "
+                    "Use natural transitions between topics. "
+                    "Avoid robotic or overly formal language. "
+                    "Be conversational but professional. "
+                    "Use appropriate humor when relevant. "
+                    "Show enthusiasm for interesting topics. "
+                    "Be empathetic when discussing complex or challenging topics."
+                )
 
-        # Configuration settings for state graph execution
-        config = {"configurable": {"thread_id": "1"}}
+            # Initialize the conversation state with the system prompt as the first human message
+            state: State = {
+                "input": initial_input,
+                "messages": [HumanMessage(content=system_prompt)]
+            }
 
-        # Process the conversation state through the compiled graph in streaming mode
-        for step in self.compiled_graph.stream(state, config, stream_mode="values"):
-            pass
+            # Configuration settings for state graph execution
+            config = {"configurable": {"thread_id": "1"}}
 
-        # Retrieve the final AI message
-        final_ai_msg = next((msg for msg in reversed(state["messages"]) if isinstance(msg, AIMessage)), None)
-        
-        if final_ai_msg:
-            # Cache the question and answer
-            self.question_cache.add_question(initial_input, final_ai_msg.content)
-            # Store in conversation memory with document name
-            self.conversation_memory.append({
-                "question": initial_input,
-                "answer": final_ai_msg.content,
-                "document_name": "CMRPublished",  # Default document name
-                "timestamp": datetime.now().isoformat()
-            })
-            return clean_output(final_ai_msg.content)
-        
-        return "No response generated."
+            # Process the conversation state through the compiled graph in streaming mode
+            for step in self.compiled_graph.stream(state, config, stream_mode="values"):
+                pass
+
+            # Retrieve the final AI message
+            final_ai_msg = next((msg for msg in reversed(state["messages"]) if isinstance(msg, AIMessage)), None)
+            
+            if final_ai_msg:
+                # Truncate the response if too long
+                max_response_length = 1000  # words
+                response_words = final_ai_msg.content.split()
+                if len(response_words) > max_response_length:
+                    final_ai_msg.content = ' '.join(response_words[:max_response_length]) + '...'
+                
+                # Cache the question and answer
+                self.question_cache.add_question(initial_input, final_ai_msg.content)
+                # Store in conversation memory with document name
+                self.conversation_memory.append({
+                    "question": initial_input,
+                    "answer": final_ai_msg.content,
+                    "document_name": "CMRPublished",  # Default document name
+                    "timestamp": datetime.now().isoformat()
+                })
+                return clean_output(final_ai_msg.content)
+            
+            return "No response generated."
+            
+        except Exception as e:
+            if "exceed context window" in str(e):
+                # Clear caches and try again with a shorter input
+                self.clear_all_caches()
+                return "I apologize, but the question was too long. Could you please rephrase it to be more concise?"
+            else:
+                # For other errors, clear caches and return error message
+                self.clear_all_caches()
+                return f"I encountered an error: {str(e)}. The caches have been cleared. Please try again."
 
     def _answer_follow_up(self, follow_up_question: str) -> str:
         """
@@ -936,9 +987,22 @@ Generate a direct answer:"""
         if document_name not in self.context_cache:
             self.context_cache[document_name] = self.rag_instance.get_document_context(document_name)
         
-        # Extract text content from document list
+        # Extract text content from document list and limit context length
         context_docs = self.context_cache[document_name]
         context = "\n".join(doc.page_content for doc in context_docs)
+        
+        # Truncate context and answer to prevent token overflow
+        max_context_length = 1000  # words
+        max_answer_length = 500    # words
+        
+        # Split into words and truncate
+        context_words = context.split()
+        answer_words = answer.split()
+        
+        if len(context_words) > max_context_length:
+            context = ' '.join(context_words[:max_context_length]) + '...'
+        if len(answer_words) > max_answer_length:
+            answer = ' '.join(answer_words[:max_answer_length]) + '...'
         
         # Create a more sophisticated prompt for generating engaging follow-ups
         prompt = f"""Based on the previous answer and document context, generate a natural, engaging follow-up question.
@@ -973,62 +1037,73 @@ Guidelines for generating an engaging follow-up:
 
 Generate a single, engaging follow-up question:"""
         
-        # Get the follow-up question from the LLM
-        response = self.llm.query(prompt)
-        follow_up = response.content if isinstance(response, AIMessage) else str(response)
-        
-        # Clean up the response to make it more conversational
-        follow_up = re.sub(r'\d+\)\s*', '', follow_up)  # Remove numbered questions
-        follow_up = re.sub(r'Could you elaborate on|What specific|How does|In what ways', '', follow_up)
-        follow_up = re.sub(r'feel free to ask me follow up questions like:', '', follow_up)
-        follow_up = re.sub(r'questions like:', '', follow_up)
-        follow_up = re.sub(r'questions such as:', '', follow_up)
-        follow_up = re.sub(r'like:', '', follow_up)
-        follow_up = re.sub(r'such as:', '', follow_up)
-        follow_up = re.sub(r'for example:', '', follow_up)
-        follow_up = re.sub(r'including:', '', follow_up)
-        follow_up = re.sub(r'like', '', follow_up)
-        follow_up = re.sub(r'such as', '', follow_up)
-        follow_up = re.sub(r'for example', '', follow_up)
-        follow_up = re.sub(r'including', '', follow_up)
-        follow_up = re.sub(r'etc\.', '', follow_up)
-        follow_up = re.sub(r'etc', '', follow_up)
-        follow_up = re.sub(r'\.\.\.', '', follow_up)
-        follow_up = re.sub(r'\.\.', '', follow_up)
-        follow_up = re.sub(r'\.', '', follow_up)
-        follow_up = re.sub(r'\?', '', follow_up)
-        follow_up = re.sub(r'\s+', ' ', follow_up).strip()
-        
-        # Add a conversational prefix based on the content and personality traits
-        curiosity_level = self.personality_traits["curiosity"]
-        empathy_level = self.personality_traits["empathy"]
-        
-        if any(word in follow_up.lower() for word in ['interesting', 'fascinating', 'surprising']):
-            if curiosity_level > 0.7:
-                follow_up = f"That's fascinating! {follow_up}?"
+        try:
+            # Get the follow-up question from the LLM
+            response = self.llm.query(prompt)
+            follow_up = response.content if isinstance(response, AIMessage) else str(response)
+            
+            # Clean up the response to make it more conversational
+            follow_up = re.sub(r'\d+\)\s*', '', follow_up)  # Remove numbered questions
+            follow_up = re.sub(r'Could you elaborate on|What specific|How does|In what ways', '', follow_up)
+            follow_up = re.sub(r'feel free to ask me follow up questions like:', '', follow_up)
+            follow_up = re.sub(r'questions like:', '', follow_up)
+            follow_up = re.sub(r'questions such as:', '', follow_up)
+            follow_up = re.sub(r'like:', '', follow_up)
+            follow_up = re.sub(r'such as:', '', follow_up)
+            follow_up = re.sub(r'for example:', '', follow_up)
+            follow_up = re.sub(r'including:', '', follow_up)
+            follow_up = re.sub(r'like', '', follow_up)
+            follow_up = re.sub(r'such as', '', follow_up)
+            follow_up = re.sub(r'for example', '', follow_up)
+            follow_up = re.sub(r'including', '', follow_up)
+            follow_up = re.sub(r'etc\.', '', follow_up)
+            follow_up = re.sub(r'etc', '', follow_up)
+            follow_up = re.sub(r'\.\.\.', '', follow_up)
+            follow_up = re.sub(r'\.\.', '', follow_up)
+            follow_up = re.sub(r'\.', '', follow_up)
+            follow_up = re.sub(r'\?', '', follow_up)
+            follow_up = re.sub(r'\s+', ' ', follow_up).strip()
+            
+            # Add a conversational prefix based on the content and personality traits
+            curiosity_level = self.personality_traits["curiosity"]
+            empathy_level = self.personality_traits["empathy"]
+            
+            if any(word in follow_up.lower() for word in ['interesting', 'fascinating', 'surprising']):
+                if curiosity_level > 0.7:
+                    follow_up = f"That's fascinating! {follow_up}?"
+                else:
+                    follow_up = f"Well, {follow_up}?"
+            elif any(word in follow_up.lower() for word in ['implication', 'consequence', 'impact']):
+                if empathy_level > 0.7:
+                    follow_up = f"I'm curious about the implications - {follow_up}?"
+                else:
+                    follow_up = f"So, {follow_up}?"
+            elif any(word in follow_up.lower() for word in ['future', 'develop', 'next']):
+                follow_up = f"Looking ahead, {follow_up}?"
             else:
-                follow_up = f"Well, {follow_up}?"
-        elif any(word in follow_up.lower() for word in ['implication', 'consequence', 'impact']):
-            if empathy_level > 0.7:
-                follow_up = f"I'm curious about the implications - {follow_up}?"
+                if curiosity_level > 0.7:
+                    follow_up = f"I'm curious, {follow_up}?"
+                else:
+                    follow_up = f"Well, {follow_up}?"
+            
+            # Store the follow-up question in conversation memory
+            self.conversation_memory.append({
+                "question": follow_up,
+                "follow_up": True,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            return follow_up
+            
+        except Exception as e:
+            if "exceed context window" in str(e):
+                # Clear caches and return a simpler follow-up
+                self.clear_all_caches()
+                return "What would you like to know more about?"
             else:
-                follow_up = f"So, {follow_up}?"
-        elif any(word in follow_up.lower() for word in ['future', 'develop', 'next']):
-            follow_up = f"Looking ahead, {follow_up}?"
-        else:
-            if curiosity_level > 0.7:
-                follow_up = f"I'm curious, {follow_up}?"
-            else:
-                follow_up = f"Well, {follow_up}?"
-        
-        # Store the follow-up question in conversation memory
-        self.conversation_memory.append({
-            "question": follow_up,
-            "follow_up": True,
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        return follow_up
+                # For other errors, clear caches and return a fallback
+                self.clear_all_caches()
+                return "Would you like to explore another aspect of this topic?"
 
     def answer_followup_node(self, state: State) -> dict:
         """
