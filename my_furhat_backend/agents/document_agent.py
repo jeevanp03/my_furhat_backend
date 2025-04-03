@@ -442,8 +442,8 @@ class DocumentAgent:
                 # Generate a summary of the retrieved content
                 summarized_text = summarize_text(
                     text_to_summarize,
-                    max_length=400,
-                    min_length=50
+                    max_length=800,  # Increased from 400
+                    min_length=100   # Increased from 50
                 )
                 # Cache the summary
                 self.summary_cache[content_hash] = summarized_text
@@ -631,20 +631,20 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         
         if response_type == "technical":
             # For technical content, allow more detail
-            if len(sentences) > 5:
-                cleaned_response = '. '.join(sentences[:5]) + '.'
+            if len(sentences) > 10:  # Increased from 5
+                cleaned_response = '. '.join(sentences[:10]) + '.'
             if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
                 cleaned_response = f"Well, {cleaned_response.lower()}"
         elif response_type == "casual":
             # For casual content, be more conversational but allow detail
-            if len(sentences) > 4:
-                cleaned_response = '. '.join(sentences[:4]) + '.'
+            if len(sentences) > 8:  # Increased from 4
+                cleaned_response = '. '.join(sentences[:8]) + '.'
             if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
                 cleaned_response = f"So, {cleaned_response.lower()}"
         else:
             # For general content, allow more detail
-            if len(sentences) > 4:
-                cleaned_response = '. '.join(sentences[:4]) + '.'
+            if len(sentences) > 8:  # Increased from 4
+                cleaned_response = '. '.join(sentences[:8]) + '.'
             if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
                 cleaned_response = f"Well, {cleaned_response.lower()}"
         

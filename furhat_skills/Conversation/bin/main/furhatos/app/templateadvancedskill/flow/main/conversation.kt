@@ -13,6 +13,8 @@ import furhatos.gestures.Gestures
 import furhatos.app.templateadvancedskill.params.LOCAL_BACKEND_URL
 import furhatos.app.templateadvancedskill.params.AWS_BACKEND_URL
 import java.util.concurrent.TimeUnit
+import furhatos.app.templateadvancedskill.nlu.UncertainResponseIntent
+import java.net.SocketTimeoutException
 
 data class Transcription(val content: String)
 
@@ -46,9 +48,28 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
     }
 
     onResponse<No> {
-        furhat.gesture(Gestures.Nod)
-        furhat.say("Alright, thank you for the conversation. Goodbye!")
-        goto(Idle)
+        // Only end conversation if it's a clear "no" without additional context
+        if (it.text.matches(Regex("(?i)^(no|nope|nah)$"))) {
+            furhat.gesture(Gestures.Nod)
+            furhat.say("Alright, thank you for the conversation. Goodbye!")
+            goto(Idle)
+        } else {
+            // If it's a "no" with additional context, treat it as a regular response
+            raise(it)
+        }
+    }
+
+    onResponse<UncertainResponseIntent> {
+        // Handle uncertain responses by encouraging further discussion
+        furhat.gesture(Gestures.Thoughtful)
+        furhat.say {
+            random {
+                +"That's an interesting perspective. Let me share what I know about this topic."
+                +"I understand your uncertainty. Let me provide some more information that might help."
+                +"That's a good point to explore further. Let me elaborate on this topic."
+            }
+        }
+        raise(it) // Process the response as a regular question
     }
 
     onResponse {
@@ -70,8 +91,8 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
         // Call the backend /ask endpoint to get an answer
         val answer = callDocumentAgent(userQuestion)
         
-        // Clean up the answer
-        val cleanAnswer = answer.split("Q1")[0]
+        // Clean up the answer - remove URLs and extra whitespace, but keep the complete response
+        val cleanAnswer = answer
             .replace(Regex("https?://\\S+"), "")
             .replace(Regex("\\s+"), " ")
             .trim()
@@ -161,28 +182,56 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
 private fun callDocumentAgent(question: String): String {
     val baseUrl = AWS_BACKEND_URL
     val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .build()
     return try {
-        val requestBody = JSONObject().put("content", question).toString()
+        val requestBody = JSONObject()
+            .put("content", question)
+            .put("max_tokens", 2000)  // Increased token limit
+            .put("temperature", 0.7)  // Add temperature for more controlled generation
+            .put("top_p", 0.9)        // Add top_p for better response quality
+            .toString()
             .toRequestBody("application/json; charset=utf-8".toMediaType())
+        
         val request = Request.Builder()
             .url("$baseUrl/ask")
             .post(requestBody)
             .build()
 
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Unexpected response: $response")
+            if (!response.isSuccessful) {
+                println("Error response from backend: ${response.code} - ${response.message}")
+                throw IOException("Unexpected response: $response")
+            }
+            
             val jsonResponse = response.body?.string() ?: throw IOException("Empty response")
             val jsonObject = JSONObject(jsonResponse)
-            jsonObject.getString("response")
+            
+            // Log the response length for debugging
+            val responseText = jsonObject.getString("response")
+            println("Response length: ${responseText.length} characters")
+            
+            // Check for potential truncation
+            if (responseText.endsWith("...") || 
+                responseText.endsWith(".") == false || 
+                responseText.length > 1900) {  // Close to max_tokens limit
+                println("Warning: Response might be truncated")
+                // You might want to handle this case differently, e.g., by requesting continuation
+            }
+            
+            responseText
         }
     } catch (e: ConnectException) {
-        "I'm sorry, I cannot process your request right now."
+        println("Connection error: ${e.message}")
+        "I'm sorry, I cannot process your request right now. Please try again in a moment."
+    } catch (e: SocketTimeoutException) {
+        println("Timeout error: ${e.message}")
+        "I'm sorry, the request took too long to process. Please try asking your question again."
     } catch (e: Exception) {
-        "I apologize, but I encountered an error processing your question."
+        println("Error processing question: ${e.message}")
+        "I apologize, but I encountered an error processing your question. Could you please rephrase it?"
     }
 }
 

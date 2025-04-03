@@ -63,3 +63,31 @@ class WhatIsThisIntent : Intent() {
         )
     }
 }
+
+class UncertainResponseIntent : Intent() {
+    override fun getExamples(lang: Language): List<String> {
+        return listOf(
+            "I don't know",
+            "I'm not sure",
+            "what do you think",
+            "what's your opinion",
+            "I see it being",
+            "I think it could be",
+            "maybe",
+            "possibly",
+            "perhaps",
+            "I'm not certain",
+            "I'm uncertain",
+            "I'm not sure about that",
+            "I'm not sure what to think",
+            "I'm not sure what to say",
+            "I'm not sure what to do",
+            "I'm not sure what to make of that",
+            "I'm not sure what to make of this",
+            "I'm not sure what to make of it",
+            "I'm not sure what to make of that",
+            "I'm not sure what to make of this",
+            "I'm not sure what to make of it"
+        )
+    }
+}
