@@ -593,6 +593,17 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         if summary:
             messages.insert(0, SystemMessage(content=f"Context: {summary}"))
         
+        # Add a concise response instruction to the system prompt
+        concise_instruction = SystemMessage(content="""
+        Please provide a concise response that:
+        1. Focuses on the most important information
+        2. Uses 2-3 sentences maximum
+        3. Avoids unnecessary details
+        4. Gets straight to the point
+        5. Uses clear and direct language
+        """)
+        messages.insert(0, concise_instruction)
+        
         # Use the chatbot to generate the response
         updated_state = self.chatbot.chatbot({"messages": messages})
         return updated_state
@@ -630,21 +641,21 @@ REASONING: [brief explanation of the decision, including specific reasons for or
                 cleaned_response = f"{cleaned_response} Would you like me to elaborate on any specific aspect?"
         
         if response_type == "technical":
-            # For technical content, allow more detail
-            if len(sentences) > 10:  # Increased from 5
-                cleaned_response = '. '.join(sentences[:10]) + '.'
+            # For technical content, keep it concise
+            if len(sentences) > 3:  # Reduced from 10
+                cleaned_response = '. '.join(sentences[:3]) + '.'
             if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
                 cleaned_response = f"Well, {cleaned_response.lower()}"
         elif response_type == "casual":
-            # For casual content, be more conversational but allow detail
-            if len(sentences) > 8:  # Increased from 4
-                cleaned_response = '. '.join(sentences[:8]) + '.'
+            # For casual content, be more conversational but keep it concise
+            if len(sentences) > 2:  # Reduced from 8
+                cleaned_response = '. '.join(sentences[:2]) + '.'
             if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
                 cleaned_response = f"So, {cleaned_response.lower()}"
         else:
-            # For general content, allow more detail
-            if len(sentences) > 8:  # Increased from 4
-                cleaned_response = '. '.join(sentences[:8]) + '.'
+            # For general content, keep it concise
+            if len(sentences) > 2:  # Reduced from 8
+                cleaned_response = '. '.join(sentences[:2]) + '.'
             if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
                 cleaned_response = f"Well, {cleaned_response.lower()}"
         

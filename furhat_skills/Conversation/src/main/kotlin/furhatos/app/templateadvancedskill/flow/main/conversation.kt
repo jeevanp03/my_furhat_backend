@@ -69,7 +69,14 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
                 +"That's a good point to explore further. Let me elaborate on this topic."
             }
         }
-        raise(it) // Process the response as a regular question
+        // Add an engaging follow-up question
+        furhat.ask {
+            random {
+                +"What specific aspect of this topic interests you the most?"
+                +"Would you like to explore a particular angle of this discussion?"
+                +"Is there a specific part you'd like me to focus on?"
+            }
+        }
     }
 
     onResponse {
