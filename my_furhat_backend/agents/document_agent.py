@@ -606,11 +606,16 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         # Add a concise response instruction to the system prompt
         concise_instruction = SystemMessage(content="""
         Please provide a concise response that:
-        1. Focuses on the most important information
-        2. Uses 2-3 sentences maximum
+        1. Uses 2-3 sentences maximum
+        2. Focuses on the most important information
         3. Avoids unnecessary details
         4. Gets straight to the point
         5. Uses clear and direct language
+        6. Avoids conversational fillers
+        7. Does not use phrases like "Well," "So," "Actually," etc.
+        8. Does not add unnecessary context
+        9. Does not ask follow-up questions unless absolutely necessary
+        10. Stays focused on answering the user's question
         """)
         messages.insert(0, concise_instruction)
         
@@ -650,49 +655,31 @@ REASONING: [brief explanation of the decision, including specific reasons for or
                 # If no context available, add a follow-up question
                 cleaned_response = f"{cleaned_response} Would you like me to elaborate on any specific aspect?"
         
-        if response_type == "technical":
-            # For technical content, keep it concise
-            if len(sentences) > 3:  # Reduced from 10
-                cleaned_response = '. '.join(sentences[:3]) + '.'
-            if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
-                cleaned_response = f"Well, {cleaned_response.lower()}"
-        elif response_type == "casual":
-            # For casual content, be more conversational but keep it concise
-            if len(sentences) > 2:  # Reduced from 8
-                cleaned_response = '. '.join(sentences[:2]) + '.'
-            if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
-                cleaned_response = f"So, {cleaned_response.lower()}"
-        else:
-            # For general content, keep it concise
-            if len(sentences) > 2:  # Reduced from 8
-                cleaned_response = '. '.join(sentences[:2]) + '.'
-            if not any(cleaned_response.lower().startswith(word) for word in ['well', 'so', 'actually', 'you know', 'i mean']):
-                cleaned_response = f"Well, {cleaned_response.lower()}"
+        # Always limit to 2-3 sentences maximum, regardless of content type
+        if len(sentences) > 3:
+            cleaned_response = '. '.join(sentences[:3]) + '.'
         
-        # Remove common repetitive phrases but keep informative content
+        # Remove common repetitive phrases and conversational fillers
         cleaned_response = re.sub(r'Let me think about that\.?\s*', '', cleaned_response)
         cleaned_response = re.sub(r'I notice you\'re interested in\.?\s*', '', cleaned_response)
         cleaned_response = re.sub(r'Based on the document\.?\s*', '', cleaned_response)
         cleaned_response = re.sub(r'According to the document\.?\s*', '', cleaned_response)
         cleaned_response = re.sub(r'In the document\.?\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'Well,?\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'So,?\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'Actually,?\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'You know,?\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'I mean,?\s*', '', cleaned_response)
         
-        # Add natural conversational elements based on content
-        if any(word in cleaned_response.lower() for word in ['interesting', 'fascinating', 'surprising']):
-            cleaned_response = f"That's fascinating! {cleaned_response.lower()}"
-        elif any(word in cleaned_response.lower() for word in ['important', 'significant', 'crucial']):
-            cleaned_response = f"Actually, {cleaned_response.lower()}"
-        elif any(word in cleaned_response.lower() for word in ['complex', 'complicated', 'difficult']):
-            cleaned_response = f"You know, {cleaned_response.lower()}"
+        # Remove any remaining conversational elements
+        cleaned_response = re.sub(r'That\'s fascinating!?\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'That\'s interesting!?\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'That\'s surprising!?\s*', '', cleaned_response)
         
-        # Ensure the response has enough detail
-        if len(cleaned_response.split()) < 30:
-            # If the response is too short, add more context
-            context = self._get_conversation_context()
-            if context:
-                cleaned_response = f"{cleaned_response} {context}"
-            else:
-                # If no context available, add a follow-up question
-                cleaned_response = f"{cleaned_response} Would you like me to elaborate on any specific aspect?"
+        # Ensure the response starts with a capital letter
+        cleaned_response = cleaned_response.strip()
+        if cleaned_response:
+            cleaned_response = cleaned_response[0].upper() + cleaned_response[1:]
         
         messages[-1].content = cleaned_response
         
