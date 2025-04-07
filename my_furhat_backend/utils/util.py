@@ -111,8 +111,8 @@ def format_structured_prompt(messages: list) -> str:
     """
     # Define the base prompt that sets the assistant's identity and instructions.
     base_prompt = (
-        "You are Dolphin, a helpful AI concierge assistant. "
         "Keep your responses concise and focused - aim for 2-3 sentences maximum. "
+        "Keep answers short and to the point. "
         "Use clear, direct language and avoid unnecessary details. "
         "Get straight to the point and avoid conversational fillers. "
         "Answer the user's query and return your answer as a JSON object with a single key 'response'.\n\n"
