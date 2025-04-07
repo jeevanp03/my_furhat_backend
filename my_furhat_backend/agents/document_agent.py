@@ -984,13 +984,15 @@ Follow-up Question:
 {follow_up_question}
 
 Guidelines:
-1. Provide a direct answer to the follow-up question
-2. Use the previous answer to support your response
-3. Keep the response concise and focused
-4. Use natural, conversational language
-5. If you can't answer based on the previous context, say so clearly
-6. Make sure your answer builds on the previous discussion
-7. Avoid repeating information from the previous answer unless relevant to the follow-up
+1. Keep the answer concise and focused
+2. Aim for 2-3 sentences maximum
+3. Provide a direct answer to the follow-up question
+4. Use the previous answer to support your response
+5. Keep the response concise and focused
+6. Use natural, conversational language
+7. If you can't answer based on the previous context, say so clearly
+8. Make sure your answer builds on the previous discussion
+9. Avoid repeating information from the previous answer unless relevant to the follow-up
 
 Generate a direct answer:"""
 
