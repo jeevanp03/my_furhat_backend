@@ -25,6 +25,7 @@ It includes **FastAPI** endpoints for synchronous/asynchronous interaction, **La
     - [Hardware Specifications](#hardware-specifications)
     - [Storage Setup](#storage-setup)
     - [Model Management](#model-management)
+    - [AWS Configuration and Server Setup](#aws-configuration-and-server-setup)
   - [Connecting to the EC2 Instance](#connecting-to-the-ec2-instance)
     - [Using Terminal SSH](#using-terminal-ssh)
     - [Using VS Code Remote - SSH](#using-vs-code-remote---ssh)
@@ -108,8 +109,7 @@ The project is optimized for running on an EC2 instance with the following speci
 - Instance Type: g4dn.xlarge (or similar GPU-enabled instance)
 - GPU: NVIDIA Tesla T4
 - Memory: 16 GB
-- Storage: 100 GB SSD
-- Network: High bandwidth
+- Storage: 100 GB GP3
 
 ### Storage Setup
 
@@ -174,6 +174,90 @@ The project includes several GPU optimizations:
    - Automatic GPU cache clearing
    - Memory usage monitoring
    - Efficient batch processing
+
+### AWS Configuration and Server Setup
+
+1. **Security Groups**
+   - Inbound Rules:
+     - SSH (Port 22) from your IP
+     - HTTP (Port 80) from anywhere
+     - HTTPS (Port 443) from anywhere
+     - Custom TCP (Port 8000) for FastAPI server
+   - Outbound Rules:
+     - All traffic allowed
+
+2. **IAM Roles and Permissions**
+   - Create an IAM role with the following permissions:
+     - AmazonS3FullAccess (for model storage)
+     - CloudWatchLogsFullAccess (for logging)
+     - AmazonEC2ContainerRegistryFullAccess (if using ECR)
+
+3. **Server Configuration**
+   - Install required system packages:
+     ```bash
+     sudo apt-get update
+     sudo apt-get install -y python3-pip python3-venv nvidia-driver-525
+     ```
+   - Configure NVIDIA drivers:
+     ```bash
+     sudo apt-get install -y nvidia-cuda-toolkit
+     nvidia-smi  # Verify GPU is recognized
+     ```
+   - Set up environment variables:
+     ```bash
+     echo 'export PYTHONPATH=/mnt/data/app/my_furhat_backend:$PYTHONPATH' >> ~/.bashrc
+     echo 'export CUDA_VISIBLE_DEVICES=0' >> ~/.bashrc
+     source ~/.bashrc
+     ```
+
+4. **Production Deployment**
+   - Use systemd service for automatic startup:
+     ```bash
+     sudo nano /etc/systemd/system/furhat-backend.service
+     ```
+   - Add the following configuration:
+     ```ini
+     [Unit]
+     Description=Furhat Backend Service
+     After=network.target
+
+     [Service]
+     User=ubuntu
+     WorkingDirectory=/mnt/data/app/my_furhat_backend
+     Environment="PATH=/mnt/data/app/my_furhat_backend/.venv/bin"
+     ExecStart=/mnt/data/app/my_furhat_backend/.venv/bin/uvicorn middleware.main:app --host 0.0.0.0 --port 8000
+     Restart=always
+
+     [Install]
+     WantedBy=multi-user.target
+     ```
+   - Enable and start the service:
+     ```bash
+     sudo systemctl enable furhat-backend
+     sudo systemctl start furhat-backend
+     ```
+
+5. **Monitoring and Logging**
+   - Set up CloudWatch logging:
+     ```bash
+     sudo apt-get install -y amazon-cloudwatch-agent
+     ```
+   - Configure log rotation:
+     ```bash
+     sudo nano /etc/logrotate.d/furhat-backend
+     ```
+   - Add configuration:
+     ```
+     /mnt/data/app/my_furhat_backend/logs/*.log {
+         daily
+         rotate 7
+         compress
+         delaycompress
+         missingok
+         notifempty
+         create 0640 ubuntu ubuntu
+     }
+     ```
 
 ---
 

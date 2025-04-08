@@ -63,18 +63,21 @@ class State(TypedDict):
 
 class QuestionCache:
     """
-    Manages caching of questions and answers with similarity-based retrieval.
+    A cache system for storing and retrieving question-answer pairs with similarity matching.
     
     This class provides functionality to:
-    - Cache questions and answers
+    - Store and retrieve question-answer pairs
     - Find similar questions using semantic similarity
-    - Normalize and clean questions/answers
-    - Persist cache to disk
+    - Clean and normalize questions and answers
+    - Persist the cache to disk
+    
+    The cache uses sentence embeddings to compute semantic similarity between questions,
+    allowing for fuzzy matching of similar questions even if they're not exact matches.
     
     Attributes:
-        cache_file (str): Path to the cache file
-        cache (Dict): In-memory cache of questions and answers
-        model (SentenceTransformer): Model for computing semantic similarity
+        cache_file (str): Path to the JSON file where the cache is persisted
+        cache (Dict): In-memory cache of question-answer pairs
+        model: Sentence transformer model for computing embeddings
     """
     
     def __init__(self, cache_file: str = os.path.join(config["HF_HOME"], "question_cache.json")):
@@ -428,12 +431,26 @@ class DocumentAgent:
     def summarization_node(self, state: State) -> dict:
         """
         Summarize the retrieved document context.
-
+        
+        This method:
+        1. Extracts document context from the retrieval message
+        2. Checks for cached summaries to avoid redundant processing
+        3. Generates a new summary if no cache exists
+        4. Maintains a size-limited summary cache
+        5. Creates a new tool message with the summarized content
+        
+        The summarization process uses a HuggingFace model optimized for
+        extractive summarization with controlled length and coherence.
+        
         Args:
-            state (State): Current conversation state
+            state (State): Current conversation state containing messages and context
 
         Returns:
-            dict: Updated state with summarized context
+            dict: Updated state with the summarized context added as a new message
+            
+        Note:
+            If no retrieval message is found, a default message indicating
+            no context is available is added to the state.
         """
         messages = state["messages"]
         
@@ -478,11 +495,21 @@ class DocumentAgent:
         """
         Analyze content for uncertainty and quality.
         
+        This method performs several analyses on the retrieved content:
+        1. Checks content length and determines if summarization is needed
+        2. Analyzes content quality and relevance
+        3. Identifies potential uncertainties or gaps in the information
+        4. Determines if additional context or clarification is needed
+        
         Args:
-            state (State): Current conversation state
+            state (State): Current conversation state containing messages and context
 
         Returns:
-            dict: Updated state with analysis results
+            dict: Updated state with analysis results and next action determination
+            
+        Note:
+            If no retrieval message is found, the state is updated to proceed to
+            uncertainty_response node.
         """
         messages = state["messages"]
         
@@ -796,10 +823,29 @@ REASONING: [brief explanation of the decision, including specific reasons for or
             
     def _get_conversation_context(self) -> str:
         """
-        Get a summary of the conversation context.
-
+        Get a formatted summary of the conversation history.
+        
+        This method:
+        1. Retrieves the conversation memory containing previous Q&A pairs
+        2. Formats each exchange into a readable Q&A format
+        3. Returns an empty string if no conversation history exists
+        
+        The formatted context is used to:
+        - Provide continuity in the conversation
+        - Help maintain context for follow-up questions
+        - Enable the model to reference previous exchanges
+        
         Returns:
-            str: Formatted conversation context
+            str: A formatted string containing the conversation history,
+                 or an empty string if no history exists
+                 
+        Example:
+            >>> agent._get_conversation_context()
+            "Previous conversation:
+             Q: What is the main topic?
+             A: The main topic is AI research.
+             Q: Can you elaborate?
+             A: It focuses on machine learning applications."
         """
         if not self.conversation_memory:
             return ""
@@ -811,7 +857,25 @@ REASONING: [brief explanation of the decision, including specific reasons for or
     
     def clear_all_caches(self) -> None:
         """
-        Clear all caches including question cache, context cache, and GPU cache.
+        Clear all caches and memory to free up resources and reset the agent's state.
+        
+        This method performs a complete cleanup of:
+        1. Question cache file and in-memory cache
+        2. Context cache for document retrieval
+        3. GPU memory cache (if CUDA is available)
+        4. Conversation memory
+        5. Summary cache
+        
+        This is typically called when:
+        - The context window is exceeded
+        - An error occurs during processing
+        - The agent needs to be reset
+        - Memory usage needs to be optimized
+        
+        Note:
+            This is a destructive operation that will remove all cached
+            information. The agent will need to rebuild its caches
+            for subsequent queries.
         """
         # Clear question cache file
         if os.path.exists(self.question_cache.cache_file):
@@ -838,14 +902,23 @@ REASONING: [brief explanation of the decision, including specific reasons for or
 
     def run(self, initial_input: str, system_prompt: str = None) -> str:
         """
-        Execute the document agent's conversation flow.
-
+        Execute the document agent workflow with the given input.
+        
+        This method orchestrates the complete workflow:
+        1. Processes the input through the state graph
+        2. Handles document retrieval and context gathering
+        3. Manages response generation and caching
+        4. Handles error cases and context window limitations
+        
         Args:
-            initial_input (str): The user's query to initiate the conversation
-            system_prompt (str, optional): An optional system prompt to set the conversational context
-
+            initial_input (str): The user's question or input text
+            system_prompt (str, optional): Custom system prompt to override default
+            
         Returns:
-            str: The cleaned output from the final AI-generated message
+            str: The generated response or error message
+            
+        Raises:
+            Exception: If there's an error during processing, with appropriate error message
         """
         try:
             # Truncate input if too long

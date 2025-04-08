@@ -49,7 +49,7 @@ fun documentInfoQnA(documentName: String): State = state(parent = Parent) {
 
     onResponse<No> {
         // Only end conversation if it's a clear "no" without additional context
-        if (it.text.matches(Regex("(?i)^(no|nope|nah)$"))) {
+        if (it.text.matches(Regex("(?i)^(no|nope|nah| no goodbye)$"))) {
             furhat.gesture(Gestures.Nod)
             furhat.say("Alright, thank you for the conversation. Goodbye!")
             goto(Idle)

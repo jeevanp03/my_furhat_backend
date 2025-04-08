@@ -103,10 +103,22 @@ def print_gpu_status() -> None:
 
 def clear_gpu_cache() -> None:
     """
-    Clear GPU memory cache to free up resources.
+    Clear GPU memory cache to free up resources and prevent memory leaks.
     
-    This function calls torch.cuda.empty_cache() to free up unused GPU memory.
-    Only has an effect if CUDA is available.
+    This function:
+    1. Checks if CUDA is available on the system
+    2. Calls torch.cuda.empty_cache() to release unused GPU memory
+    3. Prints a confirmation message when the cache is cleared
+    
+    This is particularly useful when:
+    - Switching between large models
+    - After processing large batches of data
+    - When experiencing out-of-memory errors
+    - Before starting memory-intensive operations
+    
+    Note:
+        This only clears the cache of unused memory. It does not free
+        memory that is still in use by active tensors or models.
     """
     if torch.cuda.is_available():
         torch.cuda.empty_cache()

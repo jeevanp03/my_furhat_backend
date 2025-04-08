@@ -48,17 +48,31 @@ class OSMInput(BaseModel):
 def osm_tool(lat: float, lon: float, query: str, tool_call_id: str = None) -> list:
     """
     Search for Points of Interest (POIs) using OpenStreetMap's Nominatim service.
-
-    This tool utilizes the OSMClient to query for POIs based on the provided location and search query.
-
+    
+    This tool provides geospatial search functionality by:
+    1. Converting coordinates to a location string
+    2. Querying the Nominatim service for nearby POIs
+    3. Filtering results based on the search query
+    4. Returning formatted POI information
+    
+    The tool uses rate-limited API calls to comply with Nominatim's
+    usage policies and includes error handling for API failures.
+    
     Parameters:
-        lat (float): Latitude coordinate.
-        lon (float): Longitude coordinate.
-        query (str): Search query string to filter POIs.
-        tool_call_id (str, optional): An optional identifier for tracking the tool call.
-
+        lat (float): Latitude coordinate in decimal degrees (-90 to 90)
+        lon (float): Longitude coordinate in decimal degrees (-180 to 180)
+        query (str): Search query string to filter POIs (e.g., "restaurant", "park")
+        tool_call_id (str, optional): Identifier for tracking the tool call
+        
     Returns:
-        list: A list of POIs found by the search.
+        list: A list of dictionaries containing POI information, each with:
+            - name: Name of the POI
+            - type: Category of the POI
+            - distance: Distance from the search point in meters
+            - coordinates: (latitude, longitude) tuple
+            
+    Raises:
+        Exception: If the Nominatim service is unavailable or returns an error
     """
     # Instantiate the OSM API client.
     client = OSMClient()
