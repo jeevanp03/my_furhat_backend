@@ -849,7 +849,7 @@ REASONING: [brief explanation of the decision, including specific reasons for or
         """
         try:
             # Truncate input if too long
-            max_input_length = 500  # words
+            max_input_length = 400  # words
             input_words = initial_input.split()
             if len(input_words) > max_input_length:
                 initial_input = ' '.join(input_words[:max_input_length]) + '...'
@@ -1022,7 +1022,7 @@ Generate a direct answer:"""
         context = "\n".join(doc.page_content for doc in context_docs)
         
         # Truncate context and answer to prevent token overflow
-        max_context_length = 1500  # Increased from 1000
+        max_context_length = 1200  # Increased from 1000
         max_answer_length = 750    # Increased from 500
         
         # Split into words and truncate
